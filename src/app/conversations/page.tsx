@@ -150,6 +150,9 @@ export default function ConversationsPage() {
   // Add state for scheduledActionsByUser
   const [scheduledActionsByUser, setScheduledActionsByUser] = useState<Record<string, number>>({});
   
+  // Add state for YouTube connections by user
+  const [youtubeConnectionsByUser, setYoutubeConnectionsByUser] = useState<Record<string, number>>({});
+  
   // Add loading states for leaderboard data
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
@@ -256,6 +259,10 @@ export default function ConversationsPage() {
 
   // Add state to store per-user consistency (number of active days in period)
   const [userConsistency, setUserConsistency] = useState<Record<string, number>>({});
+
+  // State for chat history export
+  const [exportingChatHistory, setExportingChatHistory] = useState<Record<string, boolean>>({});
+  const [exportErrors, setExportErrors] = useState<Record<string, string>>({});
 
   // Add state for user error counts and details
   const [userErrorCounts, setUserErrorCounts] = useState<Record<string, number>>({});
@@ -862,6 +869,22 @@ export default function ConversationsPage() {
       });
   }, [timeFilter]);
 
+  // Fetch YouTube connections when component mounts (doesn't depend on timeFilter)
+  useEffect(() => {
+    fetch('/api/youtube-connections')
+      .then(res => res.json())
+      .then((data: { success: boolean, data: { connectionCounts: Record<string, number> } }) => {
+        if (data.success && data.data) {
+          setYoutubeConnectionsByUser(data.data.connectionCounts);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching YouTube connections:', error);
+        // Set empty object on error
+        setYoutubeConnectionsByUser({});
+      });
+  }, []); // Empty dependency array - only fetch once on mount
+
 
 
   const handleSaveAnnotation = async () => {
@@ -1352,6 +1375,49 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleExportChatHistory = async (email: string) => {
+    if (exportingChatHistory[email]) return;
+    
+    console.log(`[EXPORT] Starting chat history export for user: ${email}`);
+    
+    setExportingChatHistory(prev => ({ ...prev, [email]: true }));
+    setExportErrors(prev => ({ ...prev, [email]: '' }));
+    
+    try {
+      const response = await fetch(`/api/export-chat-history?email=${encodeURIComponent(email)}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to export chat history');
+      }
+      
+      const exportData = await response.json();
+      
+      // Create and download the JSON file
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `chat-history-${email}-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      URL.revokeObjectURL(url);
+      
+      console.log(`[EXPORT] Successfully exported chat history for ${email} - ${exportData.total_conversations} conversations, ${exportData.total_messages} messages`);
+      
+    } catch (error) {
+      console.error('[EXPORT] Error exporting chat history:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setExportErrors(prev => ({ ...prev, [email]: errorMessage }));
+    } finally {
+      setExportingChatHistory(prev => ({ ...prev, [email]: false }));
+    }
+  };
+
   return (
     <main className="p-4 sm:p-8">
       <div className="max-w-7xl mx-auto">
@@ -1463,6 +1529,24 @@ export default function ConversationsPage() {
                         const totalActions = users.reduce((sum, user) => sum + user.totalActivity, 0);
                         return totalActions;
                       })()} total actions
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded-full">
+                      {(() => {
+                        // Apply the same filtering logic as the leaderboard
+                        let filteredConnections = Object.entries(youtubeConnectionsByUser);
+                        
+                        if (excludeTestEmails) {
+                          filteredConnections = filteredConnections.filter(([email]) => {
+                            if (testEmails.includes(email)) return false;
+                            if (email.includes('@example.com')) return false;
+                            if (email.includes('+')) return false;
+                            return true;
+                          });
+                        }
+                        
+                        return filteredConnections.reduce((sum, [, count]) => sum + count, 0);
+                      })()} YouTube connections
                     </div>
                     
                     {/* Error Badge with Dropdown */}
@@ -1602,6 +1686,7 @@ export default function ConversationsPage() {
                     <option value="retention">Sort by Activity Growth</option>
                     <option value="consistency">Sort by Consistency</option>
                     <option value="errors">Sort by Errors</option>
+                    <option value="youtube">Sort by YouTube Connections</option>
                   </select>
                 </div>
               </div>
@@ -1708,6 +1793,15 @@ export default function ConversationsPage() {
                         const aErrors = userErrorCounts[a.email] || 0;
                         const bErrors = userErrorCounts[b.email] || 0;
                         return bErrors - aErrors;
+                      });
+                    } else if (leaderboardSort === 'youtube') {
+                      // Filter to only show users with YouTube connections
+                      users = users.filter(user => (youtubeConnectionsByUser[user.email] || 0) > 0);
+                      // Sort by YouTube connection count (highest connections first)
+                      users.sort((a, b) => {
+                        const aConnections = youtubeConnectionsByUser[a.email] || 0;
+                        const bConnections = youtubeConnectionsByUser[b.email] || 0;
+                        return bConnections - aConnections;
                       });
                     } else {
                       users.sort((a, b) => b.totalActivity - a.totalActivity);
@@ -1854,6 +1948,7 @@ export default function ConversationsPage() {
                               {leaderboardSort === 'messages' ? user.messages : 
                                leaderboardSort === 'reports' ? user.reports : 
                                leaderboardSort === 'errors' ? (userErrorCounts[user.email] || 0) :
+                               leaderboardSort === 'youtube' ? (youtubeConnectionsByUser[user.email] || 0) :
                                user.totalActivity}
                             </span>
                           </div>
@@ -1974,6 +2069,28 @@ export default function ConversationsPage() {
                                 >
                                   📋 Copy Email
                                 </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleExportChatHistory(user.email);
+                                  }}
+                                  disabled={exportingChatHistory[user.email]}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    exportingChatHistory[user.email]
+                                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                                      : 'bg-green-600 text-white hover:bg-green-700'
+                                  }`}
+                                >
+                                  {exportingChatHistory[user.email] ? '⏳ Exporting...' : '📥 Export Chat History'}
+                                </button>
+                                {exportErrors[user.email] && (
+                                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-red-500">⚠️</span>
+                                      <span>Export failed: {exportErrors[user.email]}</span>
+                                    </div>
+                                  </div>
+                                )}
                                 {editingProfile === user.email ? (
                                   <>
                                     <button
