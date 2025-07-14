@@ -150,6 +150,9 @@ export default function ConversationsPage() {
   // Add state for scheduledActionsByUser
   const [scheduledActionsByUser, setScheduledActionsByUser] = useState<Record<string, number>>({});
   
+  // Add state for YouTube connections by user
+  const [youtubeConnectionsByUser, setYoutubeConnectionsByUser] = useState<Record<string, number>>({});
+  
   // Add loading states for leaderboard data
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
@@ -866,6 +869,22 @@ export default function ConversationsPage() {
       });
   }, [timeFilter]);
 
+  // Fetch YouTube connections when component mounts (doesn't depend on timeFilter)
+  useEffect(() => {
+    fetch('/api/youtube-connections')
+      .then(res => res.json())
+      .then((data: { success: boolean, data: { connectionCounts: Record<string, number> } }) => {
+        if (data.success && data.data) {
+          setYoutubeConnectionsByUser(data.data.connectionCounts);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching YouTube connections:', error);
+        // Set empty object on error
+        setYoutubeConnectionsByUser({});
+      });
+  }, []); // Empty dependency array - only fetch once on mount
+
 
 
   const handleSaveAnnotation = async () => {
@@ -1512,6 +1531,24 @@ export default function ConversationsPage() {
                       })()} total actions
                     </div>
                     
+                    <div className="text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded-full">
+                      {(() => {
+                        // Apply the same filtering logic as the leaderboard
+                        let filteredConnections = Object.entries(youtubeConnectionsByUser);
+                        
+                        if (excludeTestEmails) {
+                          filteredConnections = filteredConnections.filter(([email]) => {
+                            if (testEmails.includes(email)) return false;
+                            if (email.includes('@example.com')) return false;
+                            if (email.includes('+')) return false;
+                            return true;
+                          });
+                        }
+                        
+                        return filteredConnections.reduce((sum, [, count]) => sum + count, 0);
+                      })()} YouTube connections
+                    </div>
+                    
                     {/* Error Badge with Dropdown */}
                     <div className="relative error-dropdown-container">
                       <button
@@ -1649,6 +1686,7 @@ export default function ConversationsPage() {
                     <option value="retention">Sort by Activity Growth</option>
                     <option value="consistency">Sort by Consistency</option>
                     <option value="errors">Sort by Errors</option>
+                    <option value="youtube">Sort by YouTube Connections</option>
                   </select>
                 </div>
               </div>
@@ -1755,6 +1793,15 @@ export default function ConversationsPage() {
                         const aErrors = userErrorCounts[a.email] || 0;
                         const bErrors = userErrorCounts[b.email] || 0;
                         return bErrors - aErrors;
+                      });
+                    } else if (leaderboardSort === 'youtube') {
+                      // Filter to only show users with YouTube connections
+                      users = users.filter(user => (youtubeConnectionsByUser[user.email] || 0) > 0);
+                      // Sort by YouTube connection count (highest connections first)
+                      users.sort((a, b) => {
+                        const aConnections = youtubeConnectionsByUser[a.email] || 0;
+                        const bConnections = youtubeConnectionsByUser[b.email] || 0;
+                        return bConnections - aConnections;
                       });
                     } else {
                       users.sort((a, b) => b.totalActivity - a.totalActivity);
@@ -1901,6 +1948,7 @@ export default function ConversationsPage() {
                               {leaderboardSort === 'messages' ? user.messages : 
                                leaderboardSort === 'reports' ? user.reports : 
                                leaderboardSort === 'errors' ? (userErrorCounts[user.email] || 0) :
+                               leaderboardSort === 'youtube' ? (youtubeConnectionsByUser[user.email] || 0) :
                                user.totalActivity}
                             </span>
                           </div>
