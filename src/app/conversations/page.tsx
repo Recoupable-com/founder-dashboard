@@ -949,21 +949,32 @@ export default function ConversationsPage() {
           excludeTest: excludeTestEmails.toString()
         });
         
+        console.log('🔄 Fetching active users with params:', { timeFilter, excludeTest: excludeTestEmails });
+        
         const response = await fetch(`/api/active-users?${params}`);
         const data = await response.json();
         
+        console.log('📊 Active users API response:', data);
+        
         if (response.ok) {
           setActiveUsersData(data);
+          console.log('✅ Active users data updated:', data);
         } else {
-          console.error('Failed to fetch active users:', data.error);
+          console.error('❌ Failed to fetch active users:', data.error);
         }
       } catch (error) {
-        console.error('Error fetching active users:', error);
+        console.error('❌ Error fetching active users:', error);
       }
     };
     
     fetchActiveUsers();
   }, [timeFilter, excludeTestEmails]);
+
+  // Debug: Log current state changes
+  useEffect(() => {
+    console.log('🔍 Current activeUsersData state:', activeUsersData);
+    console.log('🔍 Current timeFilter:', timeFilter);
+  }, [activeUsersData, timeFilter]);
 
   // Handle metric selection
   const handleMetricClick = (metricType: MetricType) => {
