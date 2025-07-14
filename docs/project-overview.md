@@ -18,6 +18,7 @@ The CEO Dashboard is a Next.js application that provides real-time analytics and
 ### Analytics & Metrics
 - `/src/app/api/active-users/route.ts`: Active user tracking and analytics
 - `/src/app/api/conversations/route.ts`: Conversation analytics and message counting with account_id and artist_id tracking, enhanced search through message content
+- `/src/app/api/export-chat-history/route.ts`: User chat history export endpoint that generates comprehensive JSON exports of all conversations and messages for individual users
 - `/src/components/dashboard/ErrorReport.tsx`: Real-time error reporting component
 - `/src/components/MetricsChart.tsx`: General-purpose metrics visualization component
 - `/src/components/ConversationList.tsx`: Enhanced conversation management cards displaying account_id and artist_id for better room identification
@@ -81,6 +82,7 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 - User activity metrics
 - Conversation analytics
 - Sales pipeline MRR tracking
+- Individual user chat history export as JSON
 
 ### Responsive Design
 - Mobile-friendly pipeline views

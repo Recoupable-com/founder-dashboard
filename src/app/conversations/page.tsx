@@ -257,6 +257,10 @@ export default function ConversationsPage() {
   // Add state to store per-user consistency (number of active days in period)
   const [userConsistency, setUserConsistency] = useState<Record<string, number>>({});
 
+  // State for chat history export
+  const [exportingChatHistory, setExportingChatHistory] = useState<Record<string, boolean>>({});
+  const [exportErrors, setExportErrors] = useState<Record<string, string>>({});
+
   // Add state for user error counts and details
   const [userErrorCounts, setUserErrorCounts] = useState<Record<string, number>>({});
   const [userErrorDetails, setUserErrorDetails] = useState<Record<string, Array<{
@@ -1352,6 +1356,49 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleExportChatHistory = async (email: string) => {
+    if (exportingChatHistory[email]) return;
+    
+    console.log(`[EXPORT] Starting chat history export for user: ${email}`);
+    
+    setExportingChatHistory(prev => ({ ...prev, [email]: true }));
+    setExportErrors(prev => ({ ...prev, [email]: '' }));
+    
+    try {
+      const response = await fetch(`/api/export-chat-history?email=${encodeURIComponent(email)}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to export chat history');
+      }
+      
+      const exportData = await response.json();
+      
+      // Create and download the JSON file
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `chat-history-${email}-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      URL.revokeObjectURL(url);
+      
+      console.log(`[EXPORT] Successfully exported chat history for ${email} - ${exportData.total_conversations} conversations, ${exportData.total_messages} messages`);
+      
+    } catch (error) {
+      console.error('[EXPORT] Error exporting chat history:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setExportErrors(prev => ({ ...prev, [email]: errorMessage }));
+    } finally {
+      setExportingChatHistory(prev => ({ ...prev, [email]: false }));
+    }
+  };
+
   return (
     <main className="p-4 sm:p-8">
       <div className="max-w-7xl mx-auto">
@@ -1974,6 +2021,28 @@ export default function ConversationsPage() {
                                 >
                                   📋 Copy Email
                                 </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleExportChatHistory(user.email);
+                                  }}
+                                  disabled={exportingChatHistory[user.email]}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    exportingChatHistory[user.email]
+                                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                                      : 'bg-green-600 text-white hover:bg-green-700'
+                                  }`}
+                                >
+                                  {exportingChatHistory[user.email] ? '⏳ Exporting...' : '📥 Export Chat History'}
+                                </button>
+                                {exportErrors[user.email] && (
+                                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-red-500">⚠️</span>
+                                      <span>Export failed: {exportErrors[user.email]}</span>
+                                    </div>
+                                  </div>
+                                )}
                                 {editingProfile === user.email ? (
                                   <>
                                     <button
