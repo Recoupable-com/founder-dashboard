@@ -20,6 +20,7 @@ The CEO Dashboard is a Next.js application that provides real-time analytics and
 - `/src/app/api/conversations/route.ts`: Conversation analytics and message counting with account_id and artist_id tracking, enhanced search through message content
 - `/src/app/api/export-chat-history/route.ts`: User chat history export endpoint that generates comprehensive JSON exports of all conversations and messages for individual users
 - `/src/app/api/youtube-connections/route.ts`: YouTube connections tracking endpoint that maps youtube_tokens to user emails and provides connection counts and status information
+- `/src/app/api/artist-counts-by-email/route.ts`: Artist counts tracking endpoint that maps account_artist_ids to user emails and provides artist count information for leaderboard display
 - `/src/components/dashboard/ErrorReport.tsx`: Real-time error reporting component
 - `/src/components/MetricsChart.tsx`: General-purpose metrics visualization component
 - `/src/components/ConversationList.tsx`: Enhanced conversation management cards displaying account_id and artist_id for better room identification

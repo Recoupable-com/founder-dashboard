@@ -153,6 +153,9 @@ export default function ConversationsPage() {
   // Add state for YouTube connections by user
   const [youtubeConnectionsByUser, setYoutubeConnectionsByUser] = useState<Record<string, number>>({});
   
+  // Add state for artist counts by user
+  const [artistCountsByUser, setArtistCountsByUser] = useState<Record<string, number>>({});
+  
   // Add loading states for leaderboard data
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
@@ -882,6 +885,22 @@ export default function ConversationsPage() {
         console.error('Error fetching YouTube connections:', error);
         // Set empty object on error
         setYoutubeConnectionsByUser({});
+      });
+  }, []); // Empty dependency array - only fetch once on mount
+
+  // Fetch artist counts when component mounts (doesn't depend on timeFilter)
+  useEffect(() => {
+    fetch('/api/artist-counts-by-email')
+      .then(res => res.json())
+      .then((data: { success: boolean, data: { artistCountsByEmail: Record<string, number> } }) => {
+        if (data.success && data.data) {
+          setArtistCountsByUser(data.data.artistCountsByEmail);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching artist counts:', error);
+        // Set empty object on error
+        setArtistCountsByUser({});
       });
   }, []); // Empty dependency array - only fetch once on mount
 
@@ -1795,8 +1814,36 @@ export default function ConversationsPage() {
                         return bErrors - aErrors;
                       });
                     } else if (leaderboardSort === 'youtube') {
-                      // Filter to only show users with YouTube connections
-                      users = users.filter(user => (youtubeConnectionsByUser[user.email] || 0) > 0);
+                      // For YouTube connections, we need to include users who have connections but might not have activity
+                      // First, filter existing users to only show those with YouTube connections
+                      const usersWithConnections = users.filter(user => (youtubeConnectionsByUser[user.email] || 0) > 0);
+                      
+                                             // Then, find users who have YouTube connections but aren't in the activity-based users list
+                       const usersWithConnectionsEmails = new Set(usersWithConnections.map(user => user.email));
+                       const additionalYouTubeUsers: Array<{email: string; messages: number; reports: number; totalActivity: number}> = [];
+                      
+                      Object.entries(youtubeConnectionsByUser).forEach(([email, count]) => {
+                        if (count > 0 && !usersWithConnectionsEmails.has(email)) {
+                          // Apply the same filtering logic as the main leaderboard
+                          if (excludeTestEmails) {
+                            if (testEmails.includes(email)) return;
+                            if (email.includes('@example.com')) return;
+                            if (email.includes('+')) return;
+                          }
+                          
+                          // Create a user object for users with YouTube connections but no activity
+                          additionalYouTubeUsers.push({
+                            email: email,
+                            messages: 0,
+                            reports: 0,
+                            totalActivity: 0
+                          });
+                        }
+                      });
+                      
+                      // Combine both lists
+                      users = [...usersWithConnections, ...additionalYouTubeUsers];
+                      
                       // Sort by YouTube connection count (highest connections first)
                       users.sort((a, b) => {
                         const aConnections = youtubeConnectionsByUser[a.email] || 0;
@@ -1882,7 +1929,7 @@ export default function ConversationsPage() {
                               </div>
                               <div className="flex items-center gap-2">
                                 <div className="text-sm text-gray-500">
-                                  {user.messages} messages, <button
+                                  {artistCountsByUser[user.email] || 0} artist{(artistCountsByUser[user.email] || 0) !== 1 ? 's' : ''}, {youtubeConnectionsByUser[user.email] || 0} YouTube connection{(youtubeConnectionsByUser[user.email] || 0) !== 1 ? 's' : ''}, {user.messages} messages, <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (expandedScheduledActions === user.email) {
