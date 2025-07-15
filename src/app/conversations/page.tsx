@@ -150,6 +150,9 @@ export default function ConversationsPage() {
   // Add state for scheduledActionsByUser
   const [scheduledActionsByUser, setScheduledActionsByUser] = useState<Record<string, number>>({});
   
+  // Add state for segment actions by user
+  const [segmentActionsByUser, setSegmentActionsByUser] = useState<Record<string, number>>({});
+  
   // Add state for YouTube connections by user
   const [youtubeConnectionsByUser, setYoutubeConnectionsByUser] = useState<Record<string, number>>({});
   
@@ -872,6 +875,28 @@ export default function ConversationsPage() {
       });
   }, [timeFilter]);
 
+  // Fetch segment action counts from the API when timeFilter changes
+  useEffect(() => {
+    const { start, end } = getDateRangeForFilter(timeFilter);
+    let url = '/api/segment-actions';
+    if (start && end) {
+      url += `?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`;
+    }
+    fetch(url)
+      .then(res => res.json())
+      .then((data: { segmentActions: { email: string, segment_action_count: number }[] }) => {
+        const map: Record<string, number> = {};
+        for (const row of data.segmentActions || []) {
+          map[row.email] = row.segment_action_count;
+        }
+        setSegmentActionsByUser(map);
+      })
+      .catch(error => {
+        console.error('Error fetching segment actions:', error);
+        setSegmentActionsByUser({});
+      });
+  }, [timeFilter]);
+
   // Fetch YouTube connections when component mounts (doesn't depend on timeFilter)
   useEffect(() => {
     fetch('/api/youtube-connections')
@@ -1511,102 +1536,204 @@ export default function ConversationsPage() {
 
         {/* User Leaderboard (Time Filtered) */}
           <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2">
-                <div className="flex items-center gap-4">
-                  <h2 className="text-2xl font-bold">User Leaderboard</h2>
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded-full">
-                      {(() => {
-                        // Calculate total messages using the EXACT same logic as the leaderboard
-                        const userMap = new Map<string, { email: string; messages: number; reports: number; totalActivity: number }>();
-                        
-                        // Add message counts
-                        Object.entries(messagesByUser).forEach(([email, count]) => {
-                          if (!userMap.has(email)) {
-                            userMap.set(email, { email, messages: 0, reports: 0, totalActivity: 0 });
-                          }
-                          const user = userMap.get(email)!;
-                          user.messages = count;
-                          user.totalActivity += count;
-                        });
-                        
-                        // Add scheduled action counts
-                        Object.entries(scheduledActionsByUser).forEach(([email, count]) => {
-                          if (!userMap.has(email)) {
-                            userMap.set(email, { email, messages: 0, reports: 0, totalActivity: 0 });
-                          }
-                          const user = userMap.get(email)!;
-                          user.reports = count as number;
-                          user.totalActivity += count as number;
-                        });
-                        
-                        // Convert to array and filter out test emails if needed
-                        let users = Array.from(userMap.values());
-                        
-                        if (excludeTestEmails) {
-                          users = users.filter(user => {
-                            if (testEmails.includes(user.email)) return false;
-                            if (user.email.includes('@example.com')) return false;
-                            if (user.email.includes('+')) return false;
-                            return true;
-                          });
-                        }
-                        
-                        // Filter by activity (only active users)
-                        users = users.filter(user => user.totalActivity > 0);
-                        
-                        // Sum total actions (messages + reports) from active users - matches error rate calculation
-                        const totalActions = users.reduce((sum, user) => sum + user.totalActivity, 0);
-                        return totalActions;
-                      })()} total actions
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
+                {/* Title and Key Metrics */}
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-3xl font-bold text-gray-900">User Leaderboard</h2>
+                    <div className="px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">
+                      <span className="text-xs font-medium text-blue-700">Live Analytics</span>
+                    </div>
+                  </div>
+                  
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                    {/* Total Actions */}
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-100 border border-blue-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="p-2.5 bg-blue-500 rounded-xl">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-blue-900 mb-1">
+                          {(() => {
+                            // Calculate total messages using the EXACT same logic as the leaderboard
+                            const userMap = new Map<string, { email: string; messages: number; reports: number; totalActivity: number }>();
+                            
+                            // Add message counts
+                            Object.entries(messagesByUser).forEach(([email, count]) => {
+                              if (!userMap.has(email)) {
+                                userMap.set(email, { email, messages: 0, reports: 0, totalActivity: 0 });
+                              }
+                              const user = userMap.get(email)!;
+                              user.messages = count;
+                              user.totalActivity += count;
+                            });
+                            
+                            // Add scheduled action counts
+                            Object.entries(scheduledActionsByUser).forEach(([email, count]) => {
+                              if (!userMap.has(email)) {
+                                userMap.set(email, { email, messages: 0, reports: 0, totalActivity: 0 });
+                              }
+                              const user = userMap.get(email)!;
+                              user.reports = count as number;
+                              user.totalActivity += count as number;
+                            });
+                            
+                            // Convert to array and filter out test emails if needed
+                            let users = Array.from(userMap.values());
+                            
+                            if (excludeTestEmails) {
+                              users = users.filter(user => {
+                                if (testEmails.includes(user.email)) return false;
+                                if (user.email.includes('@example.com')) return false;
+                                if (user.email.includes('+')) return false;
+                                return true;
+                              });
+                            }
+                            
+                            // Filter by activity (only active users)
+                            users = users.filter(user => user.totalActivity > 0);
+                            
+                            // Sum total actions (messages + reports) from active users - matches error rate calculation
+                            const totalActions = users.reduce((sum, user) => sum + user.totalActivity, 0);
+                            return totalActions;
+                          })()}
+                        </div>
+                        <div className="text-sm font-medium text-blue-700">Total Actions</div>
+                      </div>
                     </div>
                     
-                    <div className="text-sm text-gray-600 bg-gray-50 px-3 py-1 rounded-full">
-                      {(() => {
-                        // Apply the same filtering logic as the leaderboard
-                        let filteredConnections = Object.entries(youtubeConnectionsByUser);
-                        
-                        if (excludeTestEmails) {
-                          filteredConnections = filteredConnections.filter(([email]) => {
-                            if (testEmails.includes(email)) return false;
-                            if (email.includes('@example.com')) return false;
-                            if (email.includes('+')) return false;
-                            return true;
-                          });
-                        }
-                        
-                        return filteredConnections.reduce((sum, [, count]) => sum + count, 0);
-                      })()} YouTube connections
+                    {/* Scheduled Actions */}
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-100 border border-green-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="p-2.5 bg-green-500 rounded-xl">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-green-900 mb-1">
+                          {(() => {
+                            // Apply the same filtering logic as the leaderboard for scheduled actions
+                            let filteredScheduledActions = Object.entries(scheduledActionsByUser);
+                            
+                            if (excludeTestEmails) {
+                              filteredScheduledActions = filteredScheduledActions.filter(([email]) => {
+                                if (testEmails.includes(email)) return false;
+                                if (email.includes('@example.com')) return false;
+                                if (email.includes('+')) return false;
+                                return true;
+                              });
+                            }
+                            
+                                                         return filteredScheduledActions.reduce((sum, [, count]) => sum + (count as number), 0);
+                          })()}
+                        </div>
+                        <div className="text-sm font-medium text-green-700">Scheduled Actions</div>
+                      </div>
                     </div>
                     
-                    {/* Error Badge with Dropdown */}
+                    {/* Segment Actions */}
+                    <div className="bg-gradient-to-br from-purple-50 to-violet-100 border border-purple-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="p-2.5 bg-purple-500 rounded-xl">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-purple-900 mb-1">
+                          {(() => {
+                            // Apply the same filtering logic as the leaderboard for segment actions
+                            let filteredSegmentActions = Object.entries(segmentActionsByUser);
+                            
+                            if (excludeTestEmails) {
+                              filteredSegmentActions = filteredSegmentActions.filter(([email]) => {
+                                if (testEmails.includes(email)) return false;
+                                if (email.includes('@example.com')) return false;
+                                if (email.includes('+')) return false;
+                                return true;
+                              });
+                            }
+                            
+                                                         return filteredSegmentActions.reduce((sum, [, count]) => sum + (count as number), 0);
+                          })()}
+                        </div>
+                        <div className="text-sm font-medium text-purple-700">Segment Actions</div>
+                      </div>
+                    </div>
+                    
+                    {/* YouTube Connections */}
+                    <div className="bg-gradient-to-br from-red-50 to-pink-100 border border-red-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="p-2.5 bg-red-500 rounded-xl">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-red-900 mb-1">
+                          {(() => {
+                            // Apply the same filtering logic as the leaderboard
+                            let filteredConnections = Object.entries(youtubeConnectionsByUser);
+                            
+                            if (excludeTestEmails) {
+                              filteredConnections = filteredConnections.filter(([email]) => {
+                                if (testEmails.includes(email)) return false;
+                                if (email.includes('@example.com')) return false;
+                                if (email.includes('+')) return false;
+                                return true;
+                              });
+                            }
+                            
+                            return filteredConnections.reduce((sum, [, count]) => sum + (count as number), 0);
+                          })()}
+                        </div>
+                        <div className="text-sm font-medium text-red-700">YouTube Connections</div>
+                      </div>
+                    </div>
+                    
+                    {/* System Errors */}
                     <div className="relative error-dropdown-container">
                       <button
                         onClick={() => setShowErrorDropdown(!showErrorDropdown)}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded-lg transition-colors"
+                        className="w-full bg-gradient-to-br from-orange-50 to-yellow-100 border border-orange-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
                       >
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="p-2.5 bg-orange-500 rounded-xl">
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                            </svg>
+                          </div>
+                          <svg 
+                            className={`w-4 h-4 text-orange-400 transition-transform duration-200 ${showErrorDropdown ? 'rotate-180' : ''}`} 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                        <div>
                           {errorDataLoading ? (
-                            <div className="flex items-center gap-1">
-                              <div className="w-4 h-4 border-2 border-gray-300 border-t-red-600 rounded-full animate-spin"></div>
-                              <span className="text-gray-500">loading...</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
+                              <div className="text-sm font-medium text-orange-700">Loading...</div>
                             </div>
                           ) : (
                             <>
-                              <span className="text-red-600 font-semibold">{errorData.totalErrors}</span>
-                              <span className="text-gray-500">errors</span>
+                              <div className="text-2xl font-bold text-orange-900 mb-1">{errorData.totalErrors}</div>
+                              <div className="text-sm font-medium text-orange-700">System Errors</div>
                             </>
                           )}
                         </div>
-                        <svg 
-                          className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${showErrorDropdown ? 'rotate-180' : ''}`} 
-                          fill="none" 
-                          stroke="currentColor" 
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
                       </button>
 
                       {/* Compact Error Breakdown Dropdown */}
@@ -1710,13 +1837,14 @@ export default function ConversationsPage() {
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     title="Sort leaderboard by messages, scheduled actions, all actions, or activity growth"
                   >
-                    <option value="messages">Sort by Messages</option>
-                    <option value="reports">Sort by Scheduled Actions</option>
-                    <option value="activity">Sort by All Actions</option>
-                    <option value="retention">Sort by Activity Growth</option>
-                    <option value="consistency">Sort by Consistency</option>
-                    <option value="errors">Sort by Errors</option>
-                    <option value="youtube">Sort by YouTube Connections</option>
+                                          <option value="messages">Messages</option>
+                      <option value="reports">Scheduled Actions</option>
+                      <option value="segments">Segment Actions</option>
+                      <option value="activity">All Actions</option>
+                      <option value="retention">Activity Growth</option>
+                      <option value="consistency">Consistency</option>
+                      <option value="errors">Errors</option>
+                      <option value="youtube">YouTube Connections</option>
                   </select>
                 </div>
               </div>
@@ -1786,6 +1914,8 @@ export default function ConversationsPage() {
                       users.sort((a, b) => b.messages - a.messages);
                     } else if (leaderboardSort === 'reports') {
                       users.sort((a, b) => b.reports - a.reports);
+                    } else if (leaderboardSort === 'segments') {
+                      users.sort((a, b) => (segmentActionsByUser[b.email] || 0) - (segmentActionsByUser[a.email] || 0));
                     } else if (leaderboardSort === 'retention') {
                       users.sort((a, b) => {
                         const aTrend = leaderboardTrends[a.email]?.percentChange ?? -Infinity;
@@ -2005,6 +2135,7 @@ export default function ConversationsPage() {
                             <span className="ml-2 text-lg font-bold text-gray-900 min-w-12 text-right inline-block">
                               {leaderboardSort === 'messages' ? user.messages : 
                                leaderboardSort === 'reports' ? user.reports : 
+                               leaderboardSort === 'segments' ? (segmentActionsByUser[user.email] || 0) :
                                leaderboardSort === 'errors' ? (userErrorCounts[user.email] || 0) :
                                leaderboardSort === 'youtube' ? (youtubeConnectionsByUser[user.email] || 0) :
                                user.totalActivity}
