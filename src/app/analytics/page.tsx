@@ -53,7 +53,7 @@ export default function AnalyticsPage() {
   // State for which metric is selected
   const [selectedMetric, setSelectedMetric] = useState('activeUsers');
   // State for selected time range
-  const [selectedRange, setSelectedRange] = useState('12m');
+  const [selectedRange, setSelectedRange] = useState('30d');
   // State for dropdown open/close
   const [dropdownOpen, setDropdownOpen] = useState(false);
   // State for metrics (only Active Users is dynamic for now)

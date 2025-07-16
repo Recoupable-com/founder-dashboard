@@ -70,7 +70,7 @@ export default function ConversationsPage() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeTestEmails, setExcludeTestEmails] = useState(true);
-  const [timeFilter, setTimeFilter] = useState('Last 12 Months');
+  const [timeFilter, setTimeFilter] = useState('Last 30 Days');
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -304,6 +304,15 @@ export default function ConversationsPage() {
   const [expandedSegmentCategory, setExpandedSegmentCategory] = useState<string | null>(null)
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
 
+  // Add state for YouTube connections dropdown
+  const [youtubeUserData, setYoutubeUserData] = useState<{totalUsers: number, userBreakdown: Record<string, number>, userEmails: Record<string, string[]>}>({
+    totalUsers: 0,
+    userBreakdown: {},
+    userEmails: {}
+  })
+  const [showYoutubeDropdown, setShowYoutubeDropdown] = useState(false)
+  const [expandedYoutubeCategory, setExpandedYoutubeCategory] = useState<string | null>(null)
+
   // Define testEmailFilteredConversations before any useEffect that uses it
   const testEmailFilteredConversations = conversations.filter(conv => {
     if (testEmails.includes(conv.account_email)) return false;
@@ -525,6 +534,22 @@ export default function ConversationsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showSegmentDropdown])
 
+  // Close YouTube dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showYoutubeDropdown) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.youtube-dropdown-container')) {
+          setShowYoutubeDropdown(false)
+          setExpandedYoutubeCategory(null) // Close nested dropdown too
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showYoutubeDropdown])
+
   // Close nested segment category when main dropdown closes
   useEffect(() => {
     if (!showSegmentDropdown) {
@@ -532,6 +557,14 @@ export default function ConversationsPage() {
       setCopiedEmail(null) // Clear copied state when dropdown closes
     }
   }, [showSegmentDropdown])
+
+  // Close nested YouTube category when main dropdown closes
+  useEffect(() => {
+    if (!showYoutubeDropdown) {
+      setExpandedYoutubeCategory(null)
+      setCopiedEmail(null) // Clear copied state when dropdown closes
+    }
+  }, [showYoutubeDropdown])
 
   // Copy email/wallet to clipboard
   const copyToClipboard = async (text: string) => {
@@ -992,6 +1025,48 @@ export default function ConversationsPage() {
       userEmails
     });
   }, [segmentActionsByUser, excludeTestEmails, testEmails]);
+
+  // Calculate YouTube user data when youtubeConnectionsByUser changes
+  useEffect(() => {
+    // Filter out test emails and calculate user breakdown
+    const filteredUsers = Object.entries(youtubeConnectionsByUser).filter(([email, count]) => {
+      if (count === 0) return false; // Only include users with connections
+      if (excludeTestEmails) {
+        if (testEmails.includes(email)) return false;
+        if (email.includes('@example.com')) return false;
+        if (email.includes('+')) return false;
+      }
+      return true;
+    });
+
+    // Create breakdown by YouTube connection count ranges
+    const userBreakdown: Record<string, number> = {
+      '1 connection': 0,
+      '2+ connections': 0
+    };
+
+    // Create email lists for each category
+    const userEmails: Record<string, string[]> = {
+      '1 connection': [],
+      '2+ connections': []
+    };
+
+    filteredUsers.forEach(([email, connectionCount]) => {
+      if (connectionCount === 1) {
+        userBreakdown['1 connection']++;
+        userEmails['1 connection'].push(email);
+      } else if (connectionCount >= 2) {
+        userBreakdown['2+ connections']++;
+        userEmails['2+ connections'].push(email);
+      }
+    });
+
+    setYoutubeUserData({
+      totalUsers: filteredUsers.length,
+      userBreakdown,
+      userEmails
+    });
+  }, [youtubeConnectionsByUser, excludeTestEmails, testEmails]);
 
   // Fetch YouTube connections when component mounts (doesn't depend on timeFilter)
   useEffect(() => {
@@ -1882,34 +1957,149 @@ export default function ConversationsPage() {
                     </div>
                     
                     {/* YouTube Connections */}
-                    <div className="bg-gradient-to-br from-red-50 to-pink-100 border border-red-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="p-2.5 bg-red-500 rounded-xl">
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    <div className="relative youtube-dropdown-container">
+                      <button
+                        onClick={() => setShowYoutubeDropdown(!showYoutubeDropdown)}
+                        className="w-full bg-gradient-to-br from-red-50 to-pink-100 border border-red-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="p-2.5 bg-red-500 rounded-xl">
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                          <svg 
+                            className={`w-4 h-4 text-red-400 transition-transform duration-200 ${showYoutubeDropdown ? 'rotate-180' : ''}`} 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-red-900 mb-1">
-                          {(() => {
-                            // Apply the same filtering logic as the leaderboard
-                            let filteredConnections = Object.entries(youtubeConnectionsByUser);
-                            
-                            if (excludeTestEmails) {
-                              filteredConnections = filteredConnections.filter(([email]) => {
-                                if (testEmails.includes(email)) return false;
-                                if (email.includes('@example.com')) return false;
-                                if (email.includes('+')) return false;
-                                return true;
-                              });
-                            }
-                            
-                            return filteredConnections.reduce((sum, [, count]) => sum + (count as number), 0);
-                          })()}
+                        <div>
+                          <div className="text-2xl font-bold text-red-900 mb-1">
+                            {(() => {
+                              // Apply the same filtering logic as the leaderboard
+                              let filteredConnections = Object.entries(youtubeConnectionsByUser);
+                              
+                              if (excludeTestEmails) {
+                                filteredConnections = filteredConnections.filter(([email]) => {
+                                  if (testEmails.includes(email)) return false;
+                                  if (email.includes('@example.com')) return false;
+                                  if (email.includes('+')) return false;
+                                  return true;
+                                });
+                              }
+                              
+                              return filteredConnections.reduce((sum, [, count]) => sum + (count as number), 0);
+                            })()}
+                          </div>
+                          <div className="text-sm font-medium text-red-700">YouTube Connections</div>
                         </div>
-                        <div className="text-sm font-medium text-red-700">YouTube Connections</div>
-                      </div>
+                      </button>
+
+                      {/* YouTube User Breakdown Dropdown */}
+                      {showYoutubeDropdown && (
+                        <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                          <div className="px-3 py-2 border-b border-gray-100">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <span className="text-xs font-medium text-gray-700">Connected Users</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                                {youtubeUserData.totalUsers}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="px-3 py-2">
+                            {Object.keys(youtubeUserData.userBreakdown).length > 0 ? (
+                              <div className="space-y-2">
+                                {Object.entries(youtubeUserData.userBreakdown)
+                                  .filter(([, count]) => count > 0)
+                                  .sort(([,a], [,b]) => b - a)
+                                  .map(([range, count], index) => (
+                                    <div key={range} className="space-y-2">
+                                      <button
+                                        onClick={() => setExpandedYoutubeCategory(expandedYoutubeCategory === range ? null : range)}
+                                        className="w-full flex justify-between items-center text-xs hover:bg-gray-50 px-2 py-1.5 rounded transition-colors cursor-pointer"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-2 h-2 rounded-full ${
+                                            index === 0 ? 'bg-red-500' : 
+                                            index === 1 ? 'bg-pink-500' : 
+                                            'bg-gray-400'
+                                          }`}></div>
+                                          <span className="text-gray-700 font-medium">{range}</span>
+                                          <svg 
+                                            className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${expandedYoutubeCategory === range ? 'rotate-180' : ''}`} 
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            viewBox="0 0 24 24"
+                                          >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                          </svg>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                          count >= 3 ? 'bg-red-100 text-red-700' :
+                                          count >= 2 ? 'bg-pink-100 text-pink-700' :
+                                          'bg-gray-100 text-gray-600'
+                                        }`}>
+                                          {count} user{count !== 1 ? 's' : ''}
+                                        </span>
+                                      </button>
+                                      
+                                      {/* Nested Email List */}
+                                      {expandedYoutubeCategory === range && youtubeUserData.userEmails[range] && (
+                                        <div className="ml-4 pl-2 border-l-2 border-gray-100 space-y-1">
+                                          {youtubeUserData.userEmails[range].map((email) => (
+                                            <button
+                                              key={email}
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                copyToClipboard(email)
+                                              }}
+                                              className="w-full flex justify-between items-center text-xs py-1.5 px-2 rounded hover:bg-red-50 transition-colors cursor-pointer group"
+                                              title={`Click to copy: ${email}`}
+                                            >
+                                              <span className="text-gray-600 truncate flex-1 text-left">
+                                                {email}
+                                              </span>
+                                              <div className="flex items-center gap-1 ml-2">
+                                                <span className="text-gray-400 font-mono text-xs">
+                                                  {youtubeConnectionsByUser[email]}
+                                                </span>
+                                                {copiedEmail === email ? (
+                                                  <svg className="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                  </svg>
+                                                ) : (
+                                                  <svg className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                  </svg>
+                                                )}
+                                              </div>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-4">
+                                <svg className="w-8 h-8 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <p className="text-xs text-gray-500">No YouTube connections found</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     {/* System Errors */}
