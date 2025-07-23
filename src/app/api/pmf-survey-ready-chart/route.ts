@@ -54,7 +54,7 @@ export async function GET(request: Request) {
           intervals.push({
             start,
             end,
-            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            label: start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           });
         }
         break;
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
           intervals.push({
             start,
             end,
-            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            label: start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           });
         }
     }
@@ -223,6 +223,7 @@ export async function GET(request: Request) {
 
       // Count PMF Survey Ready users using the same logic as the card
       let pmfSurveyReady = 0;
+      const pmfSurveyReadyUsers: string[] = [];
       
       // Get all unique users
       const allUsers = new Set([
@@ -251,19 +252,22 @@ export async function GET(request: Request) {
         // Check criteria: 2+ sessions AND recent activity (same as card)
         if (totalSessions >= 2 && recentActiveUsers.has(email)) {
           pmfSurveyReady++;
+          pmfSurveyReadyUsers.push(email);
         }
       }
 
       return {
         label: interval.label,
         value: pmfSurveyReady,
-        date: interval.start.toISOString()
+        date: interval.start.toISOString(),
+        users: pmfSurveyReadyUsers
       };
     }));
 
     const result = {
       labels: data.map(d => d.label),
       data: data.map(d => d.value),
+      users: data.map(d => d.users),
       timeFilter,
       excludeTest
     };

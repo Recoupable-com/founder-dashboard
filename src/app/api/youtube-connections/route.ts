@@ -33,8 +33,24 @@ export async function GET() {
       });
     }
 
-    // Step 2: Get account emails for all the account IDs
-    const accountIds = [...new Set(tokensData.map(token => token.artist_account_id))];
+    // Step 2: Map artist IDs to account IDs (youtube_tokens.artist_account_id are actually artist IDs!)
+    const artistIds = [...new Set(tokensData.map(token => token.artist_account_id))];
+    console.log(`🎭 Found ${artistIds.length} unique artist IDs in YouTube tokens`);
+    
+    const { data: artistAccountData, error: artistAccountError } = await supabaseAdmin
+      .from('account_artist_ids')
+      .select('account_id, artist_id')
+      .in('artist_id', artistIds);
+
+    if (artistAccountError) {
+      console.error('❌ Error fetching artist-account mappings:', artistAccountError);
+      return NextResponse.json({ error: artistAccountError.message }, { status: 500 });
+    }
+
+    console.log(`✅ Found ${artistAccountData?.length || 0} artist-account mappings`);
+
+    // Step 3: Get account emails for the mapped account IDs
+    const accountIds = [...new Set((artistAccountData || []).map(mapping => mapping.account_id))];
     const { data: emailsData, error: emailsError } = await supabaseAdmin
       .from('account_emails')
       .select('account_id, email')
@@ -47,15 +63,28 @@ export async function GET() {
 
     console.log(`✅ Found ${emailsData?.length || 0} account emails`);
 
-    // Step 3: Create account ID to email mapping
+    // Step 4: Create artist ID to email mapping (via account ID)
+    const artistIdToAccountId = new Map<string, string>();
+    artistAccountData?.forEach(mapping => {
+      artistIdToAccountId.set(mapping.artist_id, mapping.account_id);
+    });
+
     const accountIdToEmail = new Map<string, string>();
     emailsData?.forEach(emailRecord => {
       accountIdToEmail.set(emailRecord.account_id, emailRecord.email);
     });
 
+    const artistIdToEmail = new Map<string, string>();
+    artistAccountData?.forEach(mapping => {
+      const email = accountIdToEmail.get(mapping.account_id);
+      if (email) {
+        artistIdToEmail.set(mapping.artist_id, email);
+      }
+    });
 
 
-    // Step 4: Count connections per user and include connection details
+
+    // Step 5: Count connections per user and include connection details
     const userConnectionsMap = new Map<string, {
       email: string;
       connectionCount: number;
@@ -65,12 +94,16 @@ export async function GET() {
         created_at: string;
         updated_at: string;
         isExpired: boolean;
+        artistId: string;
       }>;
     }>();
 
     tokensData.forEach(token => {
-      const email = accountIdToEmail.get(token.artist_account_id);
-      if (!email) return; // Skip if we can't find the email
+      const email = artistIdToEmail.get(token.artist_account_id);
+      if (!email) {
+        console.log(`⚠️ No email mapping found for artist ID: ${token.artist_account_id}`);
+        return; // Skip if we can't find the email
+      }
       
       if (!userConnectionsMap.has(email)) {
         userConnectionsMap.set(email, {
@@ -91,7 +124,8 @@ export async function GET() {
         expires_at: token.expires_at,
         created_at: token.created_at,
         updated_at: token.updated_at,
-        isExpired
+        isExpired,
+        artistId: token.artist_account_id
       });
     });
 
@@ -112,6 +146,10 @@ export async function GET() {
     );
 
     console.log(`📊 YouTube connections summary:`);
+    console.log(`   Total tokens in DB: ${tokensData.length}`);
+    console.log(`   Unique artist IDs: ${artistIds.length}`);
+    console.log(`   Mapped to accounts: ${artistAccountData?.length || 0}`);
+    console.log(`   Mapped to emails: ${Object.keys(connectionCounts).length}`);
     console.log(`   Total connections: ${totalConnections}`);
     console.log(`   Active connections: ${activeConnections}`);
     console.log(`   Users with connections: ${totalUsers}`);

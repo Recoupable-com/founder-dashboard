@@ -1,18 +1,142 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+interface ErrorLog {
+  id: string;
+  error_timestamp: string;
+  error_type: string;
+  tool_name: string;
+  error_message: string;
+  [key: string]: unknown;
+}
+
+interface OutlierCluster {
+  start_time: string;
+  end_time: string;
+  error_count: number;
+  duration_minutes: number;
+  dominant_error_type: string;
+  reason: string;
+}
+
 interface ErrorSummary {
-  totalErrors: number
-  errorBreakdown: Record<string, number>
-  timeRange: string
+  totalErrors: number;
+  rawTotalErrors: number;
+  removedOutliers: number;
+  outlierClusters: OutlierCluster[];
+  errorBreakdown: Record<string, number>;
+  errors: ErrorLog[];
+  timeRange: string;
+}
+
+function detectOutlierClusters(errorLogs: ErrorLog[]): OutlierCluster[] {
+  const clusters: OutlierCluster[] = [];
+  
+  // Group errors by minute
+  const errorsByMinute = new Map<string, ErrorLog[]>();
+  
+  errorLogs.forEach(error => {
+    const minute = error.error_timestamp.slice(0, 16); // YYYY-MM-DDTHH:MM
+    if (!errorsByMinute.has(minute)) {
+      errorsByMinute.set(minute, []);
+    }
+    errorsByMinute.get(minute)!.push(error);
+  });
+  
+  // Sort minutes chronologically
+  const sortedMinutes = Array.from(errorsByMinute.keys()).sort();
+  
+  // Detect clusters: >10 errors per minute OR >50 identical errors in 10-minute window
+  for (let i = 0; i < sortedMinutes.length; i++) {
+    const minute = sortedMinutes[i];
+    const errorsInMinute = errorsByMinute.get(minute)!;
+    
+    // Threshold 1: High error rate per minute
+    if (errorsInMinute.length >= 10) {
+      // Find the extent of this cluster
+      let clusterStart = minute;
+      let clusterEnd = minute;
+      let totalErrors = errorsInMinute.length;
+      
+      // Look backwards
+      for (let j = i - 1; j >= 0 && sortedMinutes[j] >= addMinutes(minute, -5); j--) {
+        const prevMinute = sortedMinutes[j];
+        const prevErrors = errorsByMinute.get(prevMinute)!;
+        if (prevErrors.length >= 5) {
+          clusterStart = prevMinute;
+          totalErrors += prevErrors.length;
+        } else {
+          break;
+        }
+      }
+      
+      // Look forwards  
+      for (let j = i + 1; j < sortedMinutes.length && sortedMinutes[j] <= addMinutes(minute, 5); j++) {
+        const nextMinute = sortedMinutes[j];
+        const nextErrors = errorsByMinute.get(nextMinute)!;
+        if (nextErrors.length >= 5) {
+          clusterEnd = nextMinute;
+          totalErrors += nextErrors.length;
+        } else {
+          break;
+        }
+      }
+      
+      // Calculate duration and dominant error type
+      const durationMinutes = getMinutesDifference(clusterStart, clusterEnd);
+      const allClusterErrors: ErrorLog[] = [];
+      
+      for (const min of sortedMinutes) {
+        if (min >= clusterStart && min <= clusterEnd) {
+          allClusterErrors.push(...(errorsByMinute.get(min) || []));
+        }
+      }
+      
+      const errorTypeCount = new Map<string, number>();
+      allClusterErrors.forEach(error => {
+        const type = error.tool_name || error.error_type || 'Unknown';
+        errorTypeCount.set(type, (errorTypeCount.get(type) || 0) + 1);
+      });
+      
+      const dominantType = Array.from(errorTypeCount.entries())
+        .sort(([,a], [,b]) => b - a)[0]?.[0] || 'Unknown';
+      
+      clusters.push({
+        start_time: clusterStart + ':00.000Z',
+        end_time: clusterEnd + ':59.999Z', 
+        error_count: totalErrors,
+        duration_minutes: durationMinutes,
+        dominant_error_type: dominantType,
+        reason: `High error rate: ${totalErrors} errors in ${durationMinutes} minutes`
+      });
+      
+      // Skip ahead to avoid double-counting
+      i += Math.max(0, sortedMinutes.findIndex(m => m === clusterEnd) - i);
+    }
+  }
+  
+  return clusters;
+}
+
+function addMinutes(timeString: string, minutes: number): string {
+  const date = new Date(timeString + ':00.000Z');
+  date.setMinutes(date.getMinutes() + minutes);
+  return date.toISOString().slice(0, 16);
+}
+
+function getMinutesDifference(start: string, end: string): number {
+  const startDate = new Date(start + ':00.000Z');
+  const endDate = new Date(end + ':59.999Z');
+  return Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60)));
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const days = parseInt(searchParams.get('days') || '7')
+    const filterOutliers = searchParams.get('filterOutliers') === 'true'
     
-    console.log(`🔍 [ERROR-LOGS API] Starting fetch for last ${days} days`)
+    console.log(`🔍 [ERROR-LOGS API] Starting fetch for last ${days} days, filterOutliers: ${filterOutliers}`)
     
     // Initialize Supabase client with SERVICE ROLE KEY for admin access
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -40,7 +164,7 @@ export async function GET(request: Request) {
       .select('*')
       .gte('error_timestamp', startDate.toISOString())
       .order('error_timestamp', { ascending: false })
-      .limit(1000) // Reasonable limit to avoid overwhelming
+      .limit(10000) // Reasonable limit to avoid overwhelming
     
     if (errorLogsError) {
       console.error('❌ [ERROR-LOGS API] Error fetching error logs:', errorLogsError)
@@ -48,24 +172,37 @@ export async function GET(request: Request) {
     }
 
     console.log(`✅ [ERROR-LOGS API] Found ${errorLogs?.length || 0} total error logs`)
-    console.log(`🔍 [ERROR-LOGS API] Sample error log:`, errorLogs?.[0])
-
-    if (!errorLogs || errorLogs.length === 0) {
-      console.log(`⚠️ [ERROR-LOGS API] No error logs found in table`)
-      return NextResponse.json({
-        totalErrors: 0,
-        errorBreakdown: {},
-        timeRange: `${days} days`,
-        errors: []
-      })
+    
+    // 2. Detect outlier clusters
+    const outlierClusters = detectOutlierClusters(errorLogs || []);
+    console.log(`🔍 [ERROR-LOGS API] Detected ${outlierClusters.length} outlier clusters:`, outlierClusters);
+    
+    // 3. Filter out outliers if requested
+    let filteredErrors = errorLogs || [];
+    let removedErrorsCount = 0;
+    
+    if (filterOutliers && outlierClusters.length > 0) {
+      filteredErrors = (errorLogs || []).filter(error => {
+        const isInCluster = outlierClusters.some(cluster => 
+          error.error_timestamp >= cluster.start_time && 
+          error.error_timestamp <= cluster.end_time
+        );
+        
+        if (isInCluster) {
+          removedErrorsCount++;
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`🔍 [ERROR-LOGS API] Filtered out ${removedErrorsCount} outlier errors, ${filteredErrors.length} remaining`);
     }
 
-    // 2. Collect all unique room_ids
-    const roomIds = Array.from(new Set((errorLogs || []).map(log => log.room_id).filter(Boolean)))
+    // 4. Fetch all rooms for those room_ids to get account_id
+    const roomIds = Array.from(new Set((filteredErrors || []).map(log => log.room_id).filter(Boolean)))
     console.log(`🔍 [ERROR-LOGS API] Step 2: Found ${roomIds.length} unique room IDs`)
     console.log(`🔍 [ERROR-LOGS API] Sample room IDs:`, roomIds.slice(0, 3))
 
-    // 3. Fetch all rooms for those room_ids to get account_id
     let roomsById: Record<string, { id: string, account_id: string | null }> = {}
     if (roomIds.length > 0) {
       console.log(`🔍 [ERROR-LOGS API] Step 3: Fetching rooms for ${roomIds.length} room IDs...`)
@@ -84,7 +221,7 @@ export async function GET(request: Request) {
       console.log(`⚠️ [ERROR-LOGS API] No room IDs to fetch`)
     }
 
-    // 4. Fetch all account_emails for those account_ids
+    // 5. Fetch all account_emails for those account_ids
     const accountIds = Array.from(new Set(Object.values(roomsById).map(room => room.account_id).filter(Boolean)))
     console.log(`🔍 [ERROR-LOGS API] Step 4: Found ${accountIds.length} unique account IDs`)
     console.log(`🔍 [ERROR-LOGS API] Sample account IDs:`, accountIds.slice(0, 3))
@@ -107,9 +244,9 @@ export async function GET(request: Request) {
       console.log(`⚠️ [ERROR-LOGS API] No account IDs to fetch emails for`)
     }
 
-    // 5. Attach user_email to each error log
-    console.log(`🔍 [ERROR-LOGS API] Step 5: Attaching user emails to error logs...`)
-    const logsWithEmail = (errorLogs || []).map(log => {
+    // 6. Attach user_email to each error log
+    console.log(`🔍 [ERROR-LOGS API] Step 6: Attaching user emails to error logs...`)
+    const logsWithEmail = (filteredErrors || []).map(log => {
       let user_email = null
       const room = roomsById[log.room_id]
       if (room && room.account_id) {
@@ -122,29 +259,29 @@ export async function GET(request: Request) {
     console.log(`✅ [ERROR-LOGS API] Attached emails: ${logsWithUserEmail.length}/${logsWithEmail.length} errors now have user_email`)
     console.log(`🔍 [ERROR-LOGS API] Sample error with email:`, logsWithUserEmail[0])
 
-    // 6. Generate error breakdown by tool
+    // 7. Generate error breakdown by tool
     const errorBreakdown: Record<string, number> = {}
     logsWithEmail.forEach(log => {
       const toolName = log.tool_name || 'Unknown'
       errorBreakdown[toolName] = (errorBreakdown[toolName] || 0) + 1
     })
 
-    console.log(`🔍 [ERROR-LOGS API] Step 6: Error breakdown by tool:`, errorBreakdown)
+    console.log(`🔍 [ERROR-LOGS API] Step 7: Error breakdown by tool:`, errorBreakdown)
 
-    const summary: ErrorSummary = {
+         const summary: ErrorSummary = {
       totalErrors: logsWithEmail.length,
+      rawTotalErrors: (errorLogs || []).length,
+      removedOutliers: removedErrorsCount,
+      outlierClusters,
       errorBreakdown,
+      errors: logsWithEmail,
       timeRange: `${days} days`
     }
 
     console.log(`✅ [ERROR-LOGS API] Final summary:`, summary)
     console.log(`✅ [ERROR-LOGS API] Returning ${logsWithEmail.length} errors`)
 
-    // Return the detailed errors for user error badge functionality
-    return NextResponse.json({
-      ...summary,
-      errors: logsWithEmail
-    })
+    return NextResponse.json(summary)
     
   } catch (error) {
     console.error('❌ [ERROR-LOGS API] Fatal error:', error)

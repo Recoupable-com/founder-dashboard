@@ -34,6 +34,10 @@ ChartJS.register(
 export interface ActiveUsersChartData {
   labels: string[];
   data: number[];
+  users?: string[][];
+  interactiveUsers?: string[][];
+  scheduledUsers?: string[][];
+  mixedUsers?: string[][];
 }
 
 export interface ActiveUsersChartProps {
@@ -66,7 +70,7 @@ const ActiveUsersChart: React.FC<ActiveUsersChartProps> = ({
   };
 
   const getDatasetLabel = () => {
-    if (isUserTrend) return 'Actions';
+    if (isUserTrend) return 'Messages';
     
     switch (metricType) {
       case 'pmfSurveyReady':
@@ -131,7 +135,33 @@ const ActiveUsersChart: React.FC<ActiveUsersChartProps> = ({
                 callbacks: {
                   label: (context: TooltipItem<'line'>) => {
                     const label = getDatasetLabel();
-                    return `${label}: ${context.parsed.y}`;
+                    const count = context.parsed.y;
+                    const dataIndex = context.dataIndex;
+                    const users = chartData.users?.[dataIndex] || [];
+                    
+                    // Create the main label
+                    const mainLabel = `${label}: ${count}`;
+                    
+                    // If there are users, add them to the tooltip
+                    if (users.length > 0) {
+                      const maxUsersToShow = 10;
+                      const usersToShow = users.slice(0, maxUsersToShow);
+                      const tooltipLines = [mainLabel, 'Users:'];
+                      
+                      // Add each user email on its own line
+                      usersToShow.forEach(user => {
+                        tooltipLines.push(`• ${user}`);
+                      });
+                      
+                      // Add "more" indicator if needed
+                      if (users.length > maxUsersToShow) {
+                        tooltipLines.push(`• (+${users.length - maxUsersToShow} more)`);
+                      }
+                      
+                      return tooltipLines;
+                    }
+                    
+                    return mainLabel;
                   }
                 }
               }

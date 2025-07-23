@@ -71,7 +71,7 @@ export async function GET(request: Request) {
           intervals.push({
             start,
             end,
-            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            label: start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           });
         }
         break;
@@ -117,7 +117,7 @@ export async function GET(request: Request) {
           intervals.push({
             start,
             end,
-            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            label: start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           });
         }
     }
@@ -320,16 +320,27 @@ export async function GET(request: Request) {
         }
       });
 
+      // Collect power user emails for tooltip
+      const powerUserEmails: string[] = [];
+      userActivityMap.forEach((totalActions, email) => {
+        const daysActive = userConsistency.get(email) || 0;
+        if (daysActive >= minDaysActive && totalActions >= minTotalActions) {
+          powerUserEmails.push(email);
+        }
+      });
+
       return {
         label: interval.label,
         value: powerUsers,
-        date: interval.start.toISOString()
+        date: interval.start.toISOString(),
+        users: powerUserEmails
       };
     }));
 
     const result = {
       labels: data.map(d => d.label),
       data: data.map(d => d.value),
+      users: data.map(d => d.users),
       timeFilter,
       excludeTest
     };

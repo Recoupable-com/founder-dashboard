@@ -286,13 +286,24 @@ export default function ConversationsPage() {
   const [consistencyLoading, setConsistencyLoading] = useState(false);
 
   // Add state for error data
-  const [errorData, setErrorData] = useState<{totalErrors: number, errorBreakdown: Record<string, number>, errorRate: number}>({ 
-    totalErrors: 0, 
+  const [errorData, setErrorData] = useState<{
+    totalErrors: number, 
+    rawTotalErrors: number,
+    removedOutliers: number,
+    outlierClusters: Array<{start_time: string, end_time: string, error_count: number, reason: string}>,
+    errorBreakdown: Record<string, number>, 
+    errorRate: number
+  }>({ 
+    totalErrors: 0,
+    rawTotalErrors: 0,
+    removedOutliers: 0,
+    outlierClusters: [],
     errorBreakdown: {},
     errorRate: 0
   })
   const [errorDataLoading, setErrorDataLoading] = useState(false)
   const [showErrorDropdown, setShowErrorDropdown] = useState(false)
+  const [filterOutliers, setFilterOutliers] = useState(true) // Default to filtering outliers
 
   // Add state for segment actions dropdown
   const [segmentUserData, setSegmentUserData] = useState<{totalUsers: number, userBreakdown: Record<string, number>, userEmails: Record<string, string[]>}>({
@@ -304,9 +315,20 @@ export default function ConversationsPage() {
   const [expandedSegmentCategory, setExpandedSegmentCategory] = useState<string | null>(null)
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
 
-  // Add state for YouTube connections dropdown
-  const [youtubeUserData, setYoutubeUserData] = useState<{totalUsers: number, userBreakdown: Record<string, number>, userEmails: Record<string, string[]>}>({
+  // Add state for Scheduled Actions dropdown
+  const [showScheduledDropdown, setShowScheduledDropdown] = useState(false)
+  const [scheduledUserData, setScheduledUserData] = useState<{totalUsers: number, totalActions: number, userBreakdown: Record<string, number>, userEmails: Record<string, string[]>}>({
     totalUsers: 0,
+    totalActions: 0,
+    userBreakdown: {},
+    userEmails: {}
+  })
+  const [expandedScheduledCategory, setExpandedScheduledCategory] = useState<string | null>(null)
+
+  // Add state for YouTube connections dropdown
+  const [youtubeUserData, setYoutubeUserData] = useState<{totalUsers: number, totalConnections: number, userBreakdown: Record<string, number>, userEmails: Record<string, string[]>}>({
+    totalUsers: 0,
+    totalConnections: 0,
     userBreakdown: {},
     userEmails: {}
   })
@@ -360,10 +382,10 @@ export default function ConversationsPage() {
         const days = timeFilter === 'Last 24 Hours' ? 1 : timeFilter === 'Last 7 Days' ? 7 : 30
         
         // Fetch error data
-        const errorResponse = await fetch(`/api/error-logs?days=${days}`)
+        const errorResponse = await fetch(`/api/error-logs?days=${days}&filterOutliers=${filterOutliers}`)
         const errorData = await errorResponse.json()
         
-        // Use the same total actions count that's displayed in the UI pill
+        // Use the same total messages count that's displayed in the UI pill
         const totalMessages = (() => {
           // Create combined user data (same logic as the display pill)
           const userMap = new Map<string, { email: string; messages: number; reports: number; totalActivity: number }>();
@@ -403,7 +425,7 @@ export default function ConversationsPage() {
           // Filter by activity (only active users)
           users = users.filter(user => user.totalActivity > 0);
           
-          // Sum total actions (messages + reports) from active users
+          // Sum total messages (messages + reports) from active users
           return users.reduce((sum, user) => sum + user.totalActivity, 0);
         })()
         
@@ -413,6 +435,9 @@ export default function ConversationsPage() {
         if (errorResponse.ok) {
           setErrorData({
             totalErrors: totalErrors,
+            rawTotalErrors: errorData.rawTotalErrors || 0,
+            removedOutliers: errorData.removedOutliers || 0,
+            outlierClusters: errorData.outlierClusters || [],
             errorBreakdown: errorData.errorBreakdown || {},
             errorRate: Math.round(errorRate * 100) / 100 // Round to 2 decimal places
           })
@@ -425,7 +450,7 @@ export default function ConversationsPage() {
     }
     
     fetchErrorData()
-  }, [timeFilter, messagesByUser, scheduledActionsByUser, excludeTestEmails, testEmails])
+  }, [timeFilter, messagesByUser, scheduledActionsByUser, excludeTestEmails, testEmails, filterOutliers])
 
   // Auto-refresh error data every 2 minutes (since data comes from Supabase now)
   useEffect(() => {
@@ -434,10 +459,10 @@ export default function ConversationsPage() {
         const days = timeFilter === 'Last 24 Hours' ? 1 : timeFilter === 'Last 7 Days' ? 7 : 30
         
         // Fetch error data
-        const errorResponse = await fetch(`/api/error-logs?days=${days}`)
+        const errorResponse = await fetch(`/api/error-logs?days=${days}&filterOutliers=${filterOutliers}`)
         const errorData = await errorResponse.json()
         
-        // Use the same total actions count that's displayed in the UI pill
+        // Use the same total messages count that's displayed in the UI pill
         const totalMessages = (() => {
           // Create combined user data (same logic as the display pill)
           const userMap = new Map<string, { email: string; messages: number; reports: number; totalActivity: number }>();
@@ -477,7 +502,7 @@ export default function ConversationsPage() {
           // Filter by activity (only active users)
           users = users.filter(user => user.totalActivity > 0);
           
-          // Sum total actions (messages + reports) from active users
+          // Sum total messages (messages + reports) from active users
           return users.reduce((sum, user) => sum + user.totalActivity, 0);
         })()
         
@@ -487,6 +512,9 @@ export default function ConversationsPage() {
         if (errorResponse.ok) {
           setErrorData({
             totalErrors: totalErrors,
+            rawTotalErrors: errorData.rawTotalErrors || 0,
+            removedOutliers: errorData.removedOutliers || 0,
+            outlierClusters: errorData.outlierClusters || [],
             errorBreakdown: errorData.errorBreakdown || {},
             errorRate: Math.round(errorRate * 100) / 100 // Round to 2 decimal places
           })
@@ -501,7 +529,7 @@ export default function ConversationsPage() {
     
     // Clean up interval on component unmount
     return () => clearInterval(interval)
-  }, [timeFilter, messagesByUser, scheduledActionsByUser, excludeTestEmails, testEmails])
+  }, [timeFilter, messagesByUser, scheduledActionsByUser, excludeTestEmails, testEmails, filterOutliers])
 
   // Close error dropdown when clicking outside
   useEffect(() => {
@@ -565,6 +593,30 @@ export default function ConversationsPage() {
       setCopiedEmail(null) // Clear copied state when dropdown closes
     }
   }, [showYoutubeDropdown])
+
+  // Close scheduled dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showScheduledDropdown) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.scheduled-dropdown-container')) {
+          setShowScheduledDropdown(false)
+          setExpandedScheduledCategory(null) // Close nested dropdown too
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showScheduledDropdown])
+
+  // Close nested scheduled category when main dropdown closes
+  useEffect(() => {
+    if (!showScheduledDropdown) {
+      setExpandedScheduledCategory(null)
+      setCopiedEmail(null) // Clear copied state when dropdown closes
+    }
+  }, [showScheduledDropdown])
 
   // Copy email/wallet to clipboard
   const copyToClipboard = async (text: string) => {
@@ -1061,12 +1113,67 @@ export default function ConversationsPage() {
       }
     });
 
+    // Calculate total connections
+    const totalConnections = filteredUsers.reduce((sum, [, count]) => sum + count, 0);
+    
     setYoutubeUserData({
       totalUsers: filteredUsers.length,
+      totalConnections,
       userBreakdown,
       userEmails
     });
   }, [youtubeConnectionsByUser, excludeTestEmails, testEmails]);
+
+  // Calculate Scheduled Actions user data when scheduledActionsByUser changes
+  useEffect(() => {
+    // Filter out test emails and calculate user breakdown
+    const filteredUsers = Object.entries(scheduledActionsByUser).filter(([email, count]) => {
+      if (count === 0) return false; // Only include users with scheduled actions
+      if (excludeTestEmails) {
+        if (testEmails.includes(email)) return false;
+        if (email.includes('@example.com')) return false;
+        if (email.includes('+')) return false;
+      }
+      return true;
+    });
+
+    // Create breakdown by scheduled action count ranges
+    const userBreakdown: Record<string, number> = {
+      '1-5 actions': 0,
+      '6-10 actions': 0,
+      '11+ actions': 0
+    };
+
+    // Create email lists for each category
+    const userEmails: Record<string, string[]> = {
+      '1-5 actions': [],
+      '6-10 actions': [],
+      '11+ actions': []
+    };
+
+    filteredUsers.forEach(([email, actionCount]) => {
+      if (actionCount >= 1 && actionCount <= 5) {
+        userBreakdown['1-5 actions']++;
+        userEmails['1-5 actions'].push(email);
+      } else if (actionCount >= 6 && actionCount <= 10) {
+        userBreakdown['6-10 actions']++;
+        userEmails['6-10 actions'].push(email);
+      } else if (actionCount >= 11) {
+        userBreakdown['11+ actions']++;
+        userEmails['11+ actions'].push(email);
+      }
+    });
+
+    // Calculate total actions
+    const totalActions = filteredUsers.reduce((sum, [, count]) => sum + count, 0);
+    
+    setScheduledUserData({
+      totalUsers: filteredUsers.length,
+      totalActions,
+      userBreakdown,
+      userEmails
+    });
+  }, [scheduledActionsByUser, excludeTestEmails, testEmails]);
 
   // Fetch YouTube connections when component mounts (doesn't depend on timeFilter)
   useEffect(() => {
@@ -1710,26 +1817,59 @@ export default function ConversationsPage() {
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
                 {/* Title and Key Metrics */}
                 <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-3xl font-bold text-gray-900">User Leaderboard</h2>
-                    <div className="px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">
-                      <span className="text-xs font-medium text-blue-700">Live Analytics</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-3xl font-bold text-gray-900">User Leaderboard</h2>
+                      <div className="px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">
+                        <span className="text-xs font-medium text-blue-700">Live Analytics</span>
+                      </div>
+                    </div>
+                    
+                    {/* Filter and Sort Controls */}
+                    <div className="flex gap-3 items-center">
+                      <select
+                        id="leaderboard-filter"
+                        value={leaderboardFilter}
+                        onChange={e => setLeaderboardFilter(e.target.value as 'all' | 'pmf-ready' | 'power-users')}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        title="Filter users by type"
+                      >
+                        <option value="all">All Users</option>
+                        <option value="pmf-ready">PMF Survey Ready</option>
+                        <option value="power-users">Power Users</option>
+                      </select>
+                      <select
+                        id="leaderboard-sort"
+                        value={leaderboardSort}
+                        onChange={(e) => setLeaderboardSort(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        title="Sort leaderboard by messages, scheduled actions, all actions, or activity growth"
+                      >
+                        <option value="messages">Messages</option>
+                        <option value="reports">Scheduled Actions</option>
+                        <option value="segments">Segment Actions</option>
+                        <option value="activity">All Actions</option>
+                        <option value="retention">Activity Growth</option>
+                        <option value="consistency">Consistency</option>
+                        <option value="errors">Errors</option>
+                        <option value="youtube">YouTube Connections</option>
+                      </select>
                     </div>
                   </div>
                   
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 [&>*]:min-w-[180px]">
                     {/* Total Actions */}
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-100 border border-blue-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                    <div className="bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-300 transition-all duration-200">
                       <div className="flex items-start justify-between mb-3">
-                        <div className="p-2.5 bg-blue-500 rounded-xl">
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        <div className="p-2 bg-gray-50 rounded-lg">
+                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                           </svg>
                         </div>
                       </div>
                       <div>
-                        <div className="text-2xl font-bold text-blue-900 mb-1">
+                        <div className="text-2xl font-bold text-gray-900 mb-1">
                           {(() => {
                             // Calculate total messages using the EXACT same logic as the leaderboard
                             const userMap = new Map<string, { email: string; messages: number; reports: number; totalActivity: number }>();
@@ -1769,69 +1909,181 @@ export default function ConversationsPage() {
                             // Filter by activity (only active users)
                             users = users.filter(user => user.totalActivity > 0);
                             
-                            // Sum total actions (messages + reports) from active users - matches error rate calculation
+                            // Sum total messages (messages + reports) from active users - matches error rate calculation
                             const totalActions = users.reduce((sum, user) => sum + user.totalActivity, 0);
                             return totalActions;
                           })()}
                         </div>
-                        <div className="text-sm font-medium text-blue-700">Total Actions</div>
+                        <div className="text-sm font-medium text-gray-600">Total Messages</div>
                       </div>
                     </div>
                     
                     {/* Scheduled Actions */}
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-100 border border-green-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="p-2.5 bg-green-500 rounded-xl">
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <div className="relative scheduled-dropdown-container">
+                      <button
+                        onClick={() => setShowScheduledDropdown(!showScheduledDropdown)}
+                        className="w-full bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-300 transition-all duration-200 text-left"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="p-2 bg-gray-50 rounded-lg">
+                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <svg 
+                            className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showScheduledDropdown ? 'rotate-180' : ''}`} 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-green-900 mb-1">
-                          {(() => {
-                            // Apply the same filtering logic as the leaderboard for scheduled actions
-                            let filteredScheduledActions = Object.entries(scheduledActionsByUser);
-                            
-                            if (excludeTestEmails) {
-                              filteredScheduledActions = filteredScheduledActions.filter(([email]) => {
-                                if (testEmails.includes(email)) return false;
-                                if (email.includes('@example.com')) return false;
-                                if (email.includes('+')) return false;
-                                return true;
-                              });
-                            }
-                            
-                                                         return filteredScheduledActions.reduce((sum, [, count]) => sum + (count as number), 0);
-                          })()}
+                        <div>
+                          <div className="text-2xl font-bold text-gray-900 mb-1">
+                            {(() => {
+                              // Apply the same filtering logic as the leaderboard for scheduled actions
+                              let filteredScheduledActions = Object.entries(scheduledActionsByUser);
+                              
+                              if (excludeTestEmails) {
+                                filteredScheduledActions = filteredScheduledActions.filter(([email]) => {
+                                  if (testEmails.includes(email)) return false;
+                                  if (email.includes('@example.com')) return false;
+                                  if (email.includes('+')) return false;
+                                  return true;
+                                });
+                              }
+                              
+                              return filteredScheduledActions.reduce((sum, [, count]) => sum + (count as number), 0);
+                            })()}
+                          </div>
+                          <div className="text-sm font-medium text-gray-600">Sched. Actions</div>
                         </div>
-                        <div className="text-sm font-medium text-green-700">Scheduled Actions</div>
-                      </div>
+                      </button>
+
+                      {/* Scheduled Actions User Breakdown Dropdown */}
+                      {showScheduledDropdown && (
+                        <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                          <div className="px-3 py-2 border-b border-gray-100">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <span className="text-xs font-medium text-gray-700">Total Actions</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                                {scheduledUserData.totalActions}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="px-3 py-2">
+                            {Object.keys(scheduledUserData.userBreakdown).length > 0 ? (
+                              <div className="space-y-2">
+                                {Object.entries(scheduledUserData.userBreakdown)
+                                  .filter(([, count]) => count > 0)
+                                  .map(([range, count], index) => (
+                                    <div key={range} className="space-y-1">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedScheduledCategory(expandedScheduledCategory === range ? null : range);
+                                        }}
+                                        className="w-full flex justify-between items-center p-2 rounded hover:bg-green-50 transition-colors cursor-pointer"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-2 h-2 rounded-full ${
+                                            index === 0 ? 'bg-green-500' : 
+                                            index === 1 ? 'bg-emerald-500' : 
+                                            'bg-gray-400'
+                                          }`}></div>
+                                          <span className="text-gray-700 font-medium">{range}</span>
+                                          <svg 
+                                            className={`w-3 h-3 text-gray-400 transition-transform duration-200 ${expandedScheduledCategory === range ? 'rotate-180' : ''}`} 
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            viewBox="0 0 24 24"
+                                          >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
+                                          </svg>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                          count >= 3 ? 'bg-green-100 text-green-700' :
+                                          count >= 2 ? 'bg-emerald-100 text-emerald-700' :
+                                          'bg-gray-100 text-gray-600'
+                                        }`}>
+                                          {count} user{count !== 1 ? 's' : ''}
+                                        </span>
+                                      </button>
+                                      
+                                      {/* Nested Email List */}
+                                      {expandedScheduledCategory === range && scheduledUserData.userEmails[range] && (
+                                        <div className="ml-4 pl-2 border-l-2 border-gray-100 space-y-1">
+                                          {scheduledUserData.userEmails[range].map((email) => (
+                                            <button
+                                              key={email}
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                copyToClipboard(email)
+                                              }}
+                                              className="w-full flex justify-between items-center text-xs py-1.5 px-2 rounded hover:bg-green-50 transition-colors cursor-pointer group"
+                                              title={`Click to copy: ${email}`}
+                                            >
+                                              <span className="text-gray-600 truncate flex-1 text-left">
+                                                {email}
+                                              </span>
+                                              <div className="flex items-center gap-1 ml-2">
+                                                <span className="text-gray-400 font-mono text-xs">
+                                                  {scheduledActionsByUser[email]}
+                                                </span>
+                                                {copiedEmail === email ? (
+                                                  <svg className="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                  </svg>
+                                                ) : (
+                                                  <svg className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                  </svg>
+                                                )}
+                                              </div>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-500">No scheduled actions found</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     {/* Segment Actions */}
                     <div className="relative segment-dropdown-container">
                       <button
                         onClick={() => setShowSegmentDropdown(!showSegmentDropdown)}
-                        className="w-full bg-gradient-to-br from-purple-50 to-violet-100 border border-purple-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                        className="w-full bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-300 transition-all duration-200 text-left"
                       >
                         <div className="flex items-start justify-between mb-3">
-                          <div className="p-2.5 bg-purple-500 rounded-xl">
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                          <div className="p-2 bg-gray-50 rounded-lg">
+                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
                           </div>
                           <svg 
-                            className={`w-4 h-4 text-purple-400 transition-transform duration-200 ${showSegmentDropdown ? 'rotate-180' : ''}`} 
+                            className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showSegmentDropdown ? 'rotate-180' : ''}`} 
                             fill="none" 
                             stroke="currentColor" 
                             viewBox="0 0 24 24"
                           >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
                         <div>
-                          <div className="text-2xl font-bold text-purple-900 mb-1">
+                          <div className="text-2xl font-bold text-gray-900 mb-1">
                             {(() => {
                               // Apply the same filtering logic as the leaderboard for segment actions
                               let filteredSegmentActions = Object.entries(segmentActionsByUser);
@@ -1848,7 +2100,7 @@ export default function ConversationsPage() {
                               return filteredSegmentActions.reduce((sum, [, count]) => sum + (count as number), 0);
                             })()}
                           </div>
-                          <div className="text-sm font-medium text-purple-700">Segment Actions</div>
+                          <div className="text-sm font-medium text-gray-600">Seg. Actions</div>
                         </div>
                       </button>
 
@@ -1960,42 +2212,28 @@ export default function ConversationsPage() {
                     <div className="relative youtube-dropdown-container">
                       <button
                         onClick={() => setShowYoutubeDropdown(!showYoutubeDropdown)}
-                        className="w-full bg-gradient-to-br from-red-50 to-pink-100 border border-red-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                        className="w-full bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-300 transition-all duration-200 text-left"
                       >
                         <div className="flex items-start justify-between mb-3">
-                          <div className="p-2.5 bg-red-500 rounded-xl">
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          <div className="p-2 bg-gray-50 rounded-lg">
+                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
                           </div>
                           <svg 
-                            className={`w-4 h-4 text-red-400 transition-transform duration-200 ${showYoutubeDropdown ? 'rotate-180' : ''}`} 
+                            className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showYoutubeDropdown ? 'rotate-180' : ''}`} 
                             fill="none" 
                             stroke="currentColor" 
                             viewBox="0 0 24 24"
                           >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
                         <div>
-                          <div className="text-2xl font-bold text-red-900 mb-1">
-                            {(() => {
-                              // Apply the same filtering logic as the leaderboard
-                              let filteredConnections = Object.entries(youtubeConnectionsByUser);
-                              
-                              if (excludeTestEmails) {
-                                filteredConnections = filteredConnections.filter(([email]) => {
-                                  if (testEmails.includes(email)) return false;
-                                  if (email.includes('@example.com')) return false;
-                                  if (email.includes('+')) return false;
-                                  return true;
-                                });
-                              }
-                              
-                              return filteredConnections.reduce((sum, [, count]) => sum + (count as number), 0);
-                            })()}
+                          <div className="text-2xl font-bold text-gray-900 mb-1">
+                            {youtubeUserData.totalConnections}
                           </div>
-                          <div className="text-sm font-medium text-red-700">YouTube Connections</div>
+                          <div className="text-sm font-medium text-gray-600">YouTube Connects</div>
                         </div>
                       </button>
 
@@ -2006,7 +2244,7 @@ export default function ConversationsPage() {
                             <div className="flex justify-between items-center">
                               <div className="flex items-center gap-2">
                                 <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 515.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                 </svg>
                                 <span className="text-xs font-medium text-gray-700">Connected Users</span>
                               </div>
@@ -2106,33 +2344,33 @@ export default function ConversationsPage() {
                     <div className="relative error-dropdown-container">
                       <button
                         onClick={() => setShowErrorDropdown(!showErrorDropdown)}
-                        className="w-full bg-gradient-to-br from-orange-50 to-yellow-100 border border-orange-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                        className="w-full bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-300 transition-all duration-200 text-left"
                       >
                         <div className="flex items-start justify-between mb-3">
-                          <div className="p-2.5 bg-orange-500 rounded-xl">
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                          <div className="p-2 bg-gray-50 rounded-lg">
+                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
                             </svg>
                           </div>
                           <svg 
-                            className={`w-4 h-4 text-orange-400 transition-transform duration-200 ${showErrorDropdown ? 'rotate-180' : ''}`} 
+                            className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showErrorDropdown ? 'rotate-180' : ''}`} 
                             fill="none" 
                             stroke="currentColor" 
                             viewBox="0 0 24 24"
                           >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
                         <div>
                           {errorDataLoading ? (
                             <div className="flex items-center gap-2">
-                              <div className="w-5 h-5 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
-                              <div className="text-sm font-medium text-orange-700">Loading...</div>
+                              <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+                              <div className="text-sm font-medium text-gray-600">Loading...</div>
                             </div>
                           ) : (
                             <>
-                              <div className="text-2xl font-bold text-orange-900 mb-1">{errorData.totalErrors}</div>
-                              <div className="text-sm font-medium text-orange-700">System Errors</div>
+                              <div className="text-2xl font-bold text-gray-900 mb-1">{errorData.totalErrors}</div>
+                              <div className="text-sm font-medium text-gray-600">System Errors</div>
                             </>
                           )}
                         </div>
@@ -2164,6 +2402,37 @@ export default function ConversationsPage() {
                               )}
                             </div>
                           </div>
+                          
+                          {/* Outlier Filter Toggle */}
+                          <div className="px-3 py-2 border-b border-gray-100">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                </svg>
+                                <span className="text-xs font-medium text-gray-700">Filter Outliers</span>
+                                {errorData.removedOutliers > 0 && (
+                                  <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                    -{errorData.removedOutliers}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => setFilterOutliers(!filterOutliers)}
+                                title={`${filterOutliers ? 'Disable' : 'Enable'} outlier filtering`}
+                                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                  filterOutliers ? 'bg-blue-600' : 'bg-gray-200'
+                                }`}
+                              >
+                                <span
+                                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                                    filterOutliers ? 'translate-x-4' : 'translate-x-0.5'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                          </div>
+                          
                           <div className="p-3">
                             
                             {/* Tool Breakdown */}
@@ -2219,36 +2488,7 @@ export default function ConversationsPage() {
                   </div>
                 </div>
                 
-                {/* Filter and Sort Controls */}
-                <div className="flex gap-3 items-center flex-wrap">
-                  <select
-                    id="leaderboard-filter"
-                    value={leaderboardFilter}
-                    onChange={e => setLeaderboardFilter(e.target.value as 'all' | 'pmf-ready' | 'power-users')}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    title="Filter users by type"
-                  >
-                    <option value="all">All Users</option>
-                    <option value="pmf-ready">PMF Survey Ready</option>
-                    <option value="power-users">Power Users</option>
-                  </select>
-                  <select
-                    id="leaderboard-sort"
-                    value={leaderboardSort}
-                    onChange={(e) => setLeaderboardSort(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    title="Sort leaderboard by messages, scheduled actions, all actions, or activity growth"
-                  >
-                                          <option value="messages">Messages</option>
-                      <option value="reports">Scheduled Actions</option>
-                      <option value="segments">Segment Actions</option>
-                      <option value="activity">All Actions</option>
-                      <option value="retention">Activity Growth</option>
-                      <option value="consistency">Consistency</option>
-                      <option value="errors">Errors</option>
-                      <option value="youtube">YouTube Connections</option>
-                  </select>
-                </div>
+
               </div>
 
               {(leaderboardLoading || leaderboardFilterLoading) ? (
@@ -2471,8 +2711,31 @@ export default function ConversationsPage() {
 
                               </div>
                               <div className="flex items-center gap-2">
-                                <div className="text-sm text-gray-500">
-                                  {artistCountsByUser[user.email] || 0} artist{(artistCountsByUser[user.email] || 0) !== 1 ? 's' : ''}, {youtubeConnectionsByUser[user.email] || 0} YouTube connection{(youtubeConnectionsByUser[user.email] || 0) !== 1 ? 's' : ''}, {user.messages} messages, <button
+                                {/* Updated badge-based user info display */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {/* Artists badge */}
+                                  <div className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium border border-purple-100">
+                                    <span className="text-purple-500">🎭</span>
+                                    <span>{artistCountsByUser[user.email] || 0}</span>
+                                    <span className="text-purple-600">artist{(artistCountsByUser[user.email] || 0) !== 1 ? 's' : ''}</span>
+                                  </div>
+                                  
+                                  {/* YouTube connections badge */}
+                                  <div className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 rounded-full text-xs font-medium border border-red-100">
+                                    <span className="text-red-500">📺</span>
+                                    <span>{youtubeConnectionsByUser[user.email] || 0}</span>
+                                    <span className="text-red-600">YouTube</span>
+                                  </div>
+                                  
+                                  {/* Messages badge */}
+                                  <div className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-100">
+                                    <span className="text-blue-500">💬</span>
+                                    <span>{user.messages}</span>
+                                    <span className="text-blue-600">message{user.messages !== 1 ? 's' : ''}</span>
+                                  </div>
+                                  
+                                  {/* Scheduled actions badge (clickable) */}
+                                  <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (expandedScheduledActions === user.email) {
@@ -2482,11 +2745,14 @@ export default function ConversationsPage() {
                                         fetchUserScheduledActions(user.email);
                                       }
                                     }}
-                                    className="text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100 hover:bg-green-100 transition-colors cursor-pointer"
                                   >
-                                    {user.reports} scheduled actions
+                                    <span className="text-green-500">⚡</span>
+                                    <span>{user.reports}</span>
+                                    <span className="text-green-600">scheduled</span>
                                   </button>
                                 </div>
+                                
                                 {userProfiles[user.email] && (
                                   <div className="flex items-center gap-1">
                                     <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
@@ -2740,7 +3006,7 @@ export default function ConversationsPage() {
                                 <div className="space-y-2">
                                   <div className="flex items-center gap-2 text-sm">
                                     <span className="font-medium text-gray-700">Activity:</span>
-                                    <span className="text-gray-600">{user.totalActivity} total actions (#{index + 1} of {users.length} users)</span>
+                                    <span className="text-gray-600">{user.totalActivity} total messages (#{index + 1} of {users.length} users)</span>
                                   </div>
                                   <div className="flex items-center gap-2 text-sm">
                                     <span className="font-medium text-gray-700">Pattern:</span>

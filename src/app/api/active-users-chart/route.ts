@@ -60,7 +60,7 @@ export async function GET(request: Request) {
           intervals.push({
             start,
             end,
-            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            label: start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           });
         }
         break;
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
           intervals.push({
             start,
             end,
-            label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            label: start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           });
         }
     }
@@ -134,48 +134,96 @@ export async function GET(request: Request) {
       testEmailsList = (testEmailsData?.map(item => item.email) || []) as string[];
     }
 
-    // Calculate active users for each interval using the same RPC approach as working APIs
+    // Calculate active users for each interval with breakdown of interactive vs scheduled activity
     const data = await Promise.all(intervals.map(async (interval) => {
-      // Use the same RPC function that works in other APIs
+      // Get interactive users (those who sent messages)
       const { data: messageData } = await supabaseAdmin.rpc('get_message_counts_by_user', {
         start_date: interval.start.toISOString(),
         end_date: interval.end.toISOString()
       });
       
-      if (!messageData) {
-        return {
-          label: interval.label,
-          value: 0,
-          date: interval.start.toISOString()
-        };
+      // Get scheduled action users for this interval
+      const { data: scheduledActionsData } = await supabaseAdmin
+        .from('scheduled_actions')
+        .select('account_id, created_at')
+        .gte('created_at', interval.start.toISOString())
+        .lte('created_at', interval.end.toISOString());
+      
+      const interactiveUsers = new Set<string>();
+      const scheduledActionUsers = new Set<string>();
+      
+      // Process interactive users (messages)
+      if (messageData) {
+        messageData.forEach((row: { account_email: string; message_count: number }) => {
+          if (!row.account_email) return;
+          
+          if (excludeTest) {
+            if (testEmailsList.includes(row.account_email)) return;
+            if (row.account_email.includes('@example.com')) return;
+            if (row.account_email.includes('+')) return;
+          }
+          
+          interactiveUsers.add(row.account_email);
+        });
       }
       
-      // Apply test email filtering (same as other working APIs)
-      const activeUsers = new Set<string>();
-      
-      messageData.forEach((row: { account_email: string; message_count: number }) => {
-        if (!row.account_email) return;
+      // Process scheduled action users
+      if (scheduledActionsData) {
+        // Get all account_ids to fetch emails in batch
+        const accountIds = [...new Set(scheduledActionsData.map(action => action.account_id))];
         
-        if (excludeTest) {
-          // Apply same filtering logic as other working APIs
-          if (testEmailsList.includes(row.account_email)) return;
-          if (row.account_email.includes('@example.com')) return;
-          if (row.account_email.includes('+')) return;
+        if (accountIds.length > 0) {
+          const { data: emailData } = await supabaseAdmin
+            .from('account_emails')
+            .select('account_id, email')
+            .in('account_id', accountIds);
+          
+          const accountToEmailMap = new Map();
+          (emailData || []).forEach(row => {
+            accountToEmailMap.set(row.account_id, row.email);
+          });
+          
+          scheduledActionsData.forEach(action => {
+            const email = accountToEmailMap.get(action.account_id);
+            if (email) {
+              if (excludeTest) {
+                if (testEmailsList.includes(email)) return;
+                if (email.includes('@example.com')) return;
+                if (email.includes('+')) return;
+              }
+              
+              scheduledActionUsers.add(email);
+            }
+          });
         }
-        
-        activeUsers.add(row.account_email);
-      });
+      }
+      
+      // Create breakdown: interactive only, scheduled only, both
+      const interactiveOnly = new Set([...interactiveUsers].filter(user => !scheduledActionUsers.has(user)));
+      const scheduledOnly = new Set([...scheduledActionUsers].filter(user => !interactiveUsers.has(user)));
+      const mixedUsers = new Set([...interactiveUsers].filter(user => scheduledActionUsers.has(user)));
+      
+      // Total unique active users
+      const allActiveUsers = new Set([...interactiveUsers, ...scheduledActionUsers]);
       
       return {
         label: interval.label,
-        value: activeUsers.size,
-        date: interval.start.toISOString()
+        value: allActiveUsers.size,
+        date: interval.start.toISOString(),
+        users: Array.from(allActiveUsers),
+        interactiveUsers: Array.from(interactiveOnly),
+        scheduledUsers: Array.from(scheduledOnly),
+        mixedUsers: Array.from(mixedUsers)
       };
     }));
 
     const result = {
       labels: data.map(d => d.label),
-      data: data.map(d => d.value)
+      data: data.map(d => d.value),
+      users: data.map(d => d.users),
+      interactiveUsers: data.map(d => d.interactiveUsers),
+      scheduledUsers: data.map(d => d.scheduledUsers),
+      mixedUsers: data.map(d => d.mixedUsers)
     };
 
     console.log('Active Users Chart API: Generated', data.length, 'data points');
