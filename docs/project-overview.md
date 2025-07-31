@@ -1,152 +1,170 @@
 # CEO Dashboard - Project Overview
 
-## Architecture Overview
+This dashboard helps track active users, conversations, and business metrics for the Recoup platform.
 
-The CEO Dashboard is a Next.js application that provides real-time analytics and error monitoring for the Recoup AI platform. It tracks user activity, conversation metrics, sales pipeline, and error logs through direct Supabase integration.
+## Features
 
-## Key Components
+1. **Active Users Tracking**: Monitor daily, weekly, and monthly active users
+2. **Conversation Analytics**: Track room conversations, message counts, and user engagement
+3. **Sales Pipeline**: Manage customer pipeline with MRR tracking and forecasting
+4. **Error Logging**: Track and analyze system errors from Telegram integration
+5. **User Analysis**: Deep dive into individual user behavior and engagement patterns
+6. **Agent Template Analytics**: Track usage of agent templates and user adoption
 
-### Error Logging System
-- `/src/lib/supabase/errorLogger.ts`: Direct Supabase error logging helper that logs to the new error_logs table structure (without user_email column)
-- `/src/app/api/error-logs/route.ts`: Primary error log aggregation and analytics API that joins error_logs → rooms → account_emails to get user emails for dashboard display
-- `/src/app/api/telegram-errors/route.ts`: Legacy endpoint updated to use error_logs table for backward compatibility
-- `/src/app/api/add-errors-manual/route.ts`: Manual error insertion API for backfilling historical errors
-- `/src/app/api/log-error-direct/route.ts`: Direct error logging endpoint that bypasses Telegram API, updated to work with new table structure
-- `/src/app/api/sync-telegram-errors/route.ts`: Enhanced Telegram error sync with comprehensive debugging and support for channels/supergroups
-- `/src/app/api/telegram-debug/route.ts`: Comprehensive Telegram bot diagnostics with connection testing and configuration validation
+## Architecture
 
-### Analytics & Metrics
-- `/src/app/api/active-users/route.ts`: Active user tracking and analytics
-- `/src/app/api/conversations/route.ts`: Conversation analytics and message counting with account_id and artist_id tracking, enhanced search through message content
-- `/src/app/api/export-chat-history/route.ts`: User chat history export endpoint that generates comprehensive JSON exports of all conversations and messages for individual users
-- `/src/app/api/youtube-connections/route.ts`: YouTube connections tracking endpoint that maps youtube_tokens to user emails and provides connection counts and status information
-- `/src/app/api/artist-counts-by-email/route.ts`: Artist counts tracking endpoint that maps account_artist_ids to user emails and provides artist count information for leaderboard display
-- `/src/app/api/segment-actions/route.ts`: Segment actions tracking endpoint that counts scheduled actions containing "segment" or "segments" in the prompt field for specialized analytics
-- `/src/app/api/segment-actions-debug/route.ts`: Debug endpoint for segment actions that shows detailed information including actual prompts, matched text snippets, and user breakdowns for verification
-- `/src/components/dashboard/ErrorReport.tsx`: Real-time error reporting component
-- `/src/components/MetricsChart.tsx`: General-purpose metrics visualization component
-- `/src/components/ConversationList.tsx`: Enhanced conversation management cards displaying account_id and artist_id for better room identification
+- **Frontend**: Next.js 15.2.4 with TypeScript and React 18.3.1
+- **Backend**: Next.js API routes connecting to Supabase
+- **Database**: Supabase (PostgreSQL)
+- **Styling**: Tailwind CSS with custom UI components
+- **Authentication**: Privy integration
 
-### Sales Pipeline
-- `/src/components/pipeline/PipelineBoard.tsx`: Main sales pipeline visualization
-- `/src/components/pipeline/CustomerCard.tsx`: Individual customer card component
-- `/src/context/PipelineContext.tsx`: Pipeline state management
-- `/src/hooks/useSalesPipelineMRR.ts`: MRR calculations for pipeline customers
+## Key Files and Components
 
-### Database Integration
-- `/src/lib/supabase.ts`: Supabase client configuration
-- `/supabase/migrations/001_create_error_logs_table.sql`: Error logs table schema
-- `/migrations/001_create_tables.sql`: Main application tables
+### Pages
+- `/`: Main dashboard with metrics overview
+- `/conversations`: Detailed conversation analytics and user activity
+- `/sales-pipeline`: Customer pipeline management
+- `/agent-templates`: Agent template usage analytics and tracking
 
-## Error Logging Flow
+### API Routes
 
-### Automatic Logging (Recommended)
-1. **Recoup App** → `sendErrorNotification()` → **CEO Dashboard Supabase**
-2. Direct database insertion with `logErrorToSupabase()` helper
-3. Immediate tracking without Telegram API limitations
-4. Duplicate prevention and proper error categorization
+#### Core Analytics
+- `/api/active-users`: Get active user counts for different time periods
+- `/api/active-users-chart`: Chart data for active users over time
+- `/api/conversations`: Paginated conversation listings with filters
+- `/api/conversations/[roomId]`: Individual conversation details
+- `/api/conversations/leaderboard`: User activity leaderboard
+- `/api/conversations/message-counts`: Message count aggregations
 
-### Manual/Fallback Options
-1. **Telegram Sync**: `/api/sync-telegram-errors` (limited by Telegram API)
-2. **Manual Addition**: `/api/add-errors-manual` for historical data
-3. **Direct API**: `/api/log-error-direct` for external integrations
+#### Agent Template Tracking
+- `/api/agent-template-usage`: Analyze which agent templates are being used by matching prompts from user memories to template prompts. Provides usage statistics, user adoption, and timeline data.
 
-## Integration Guide
+#### Error Management
+- `/api/error-logs`: Retrieve and analyze system error logs
+- `/api/telegram-webhook`: Webhook endpoint for Telegram error reporting
+- `/api/sync-telegram-errors`: Manual sync of errors from Telegram
 
-### For Recoup App Integration
-1. Install the `errorLogger.ts` helper in your Recoup app
-2. Add CEO Dashboard Supabase credentials to environment variables
-3. Update existing error notification calls to use dual logging
-4. Errors will immediately appear in CEO Dashboard analytics
+#### User Analytics
+- `/api/power-users`: Identify and track power users based on activity
+- `/api/power-users-chart`: Chart data for power user trends
+- `/api/pmf-survey-ready`: Users ready for PMF surveys
+- `/api/user-activity-details`: Detailed user activity breakdown
+- `/api/user-activity-trend`: User activity trends over time
 
-### Environment Variables Required
-```bash
-# In Recoup App
-CEO_DASHBOARD_SUPABASE_URL=your_ceo_dashboard_url
-CEO_DASHBOARD_SUPABASE_ANON_KEY=your_ceo_dashboard_key
+#### Sales Pipeline
+- `/api/customers/update`: Update customer information in pipeline
 
-# In CEO Dashboard
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-```
+### Components
 
-## Key Features
+#### Dashboard Components
+- `MetricCard`: Reusable metric display with tooltip support
+- `ActiveUsersChart`: Chart component for active user visualization
+- `AutoRefresh`: Automatic data refresh functionality
+- `ConnectionStatus`: Database connection monitoring
 
-### Real-time Error Tracking
-- Immediate error logging to dashboard
-- Tool-specific error categorization
-- User email and room ID tracking
-- Stack trace preservation
-- Duplicate prevention
+#### Conversation Components
+- `ConversationList`: Paginated conversation listings
+- `ConversationDetail`: Individual conversation view
+- `ConversationFilters`: Filter controls for conversations
+- `UserFilter`: User-specific filtering
+- `SearchAndFilters`: Combined search and filter interface
 
-### Analytics Dashboard
-- Error rate calculations
-- Tool failure analysis
-- User activity metrics
-- Conversation analytics
-- Sales pipeline MRR tracking
-- Individual user chat history export as JSON
-- YouTube connections tracking and leaderboard sorting
+#### Pipeline Components
+- `PipelineBoard`: Kanban-style pipeline view
+- `PipelineColumn`: Individual pipeline columns
+- `CustomerCard`: Customer information display
+- `CustomerFormModal`: Customer editing interface
 
-### Responsive Design
-- Mobile-friendly pipeline views
-- Adaptive customer cards
-- Responsive metrics charts
-- Touch-friendly interfaces
+#### UI Components
+- `Navigation`: Main navigation bar
+- `Modal`: Reusable modal component
+- `Switch`: Toggle component
+- Various form components (Button, Input, Select, etc.)
 
-## Recent Improvements (Sidney/ErrorFix3)
+### Data Services
 
-### Error Logging Enhancements
-- ✅ Direct Supabase logging to bypass Telegram limitations
-- ✅ Enhanced duplicate prevention
-- ✅ Comprehensive error categorization
-- ✅ Improved debugging and diagnostics
-- ✅ Fallback mechanisms for reliability
-- ✅ Error loading states when time period changes
+#### Database Functions
+- `src/lib/supabase.ts`: Supabase client configuration and connection
+- `src/lib/databaseFunctions.ts`: Database utility functions
+- `src/lib/customerService.ts`: Customer-related database operations
 
-### Infrastructure
-- ✅ Enhanced Telegram webhook support
-- ✅ Comprehensive error parsing
-- ✅ Manual error addition capabilities
-- ✅ Detailed logging and monitoring
+#### Business Logic
+- `src/lib/conversationService.ts`: Conversation data processing
+- `src/lib/kuraAnalysis.ts`: User behavior analysis
+- `src/lib/userOrgMatcher.ts`: User organization matching
+- `src/lib/finance.ts`: Financial calculations and MRR tracking
 
-### Conversation Management
-- ✅ Enhanced conversation cards with account_id and artist_id display
-- ✅ Improved room identification for easier debugging and user tracking
-- ✅ Updated API responses to include account_id information
-- ✅ Advanced search functionality that searches through user message content in addition to emails, topics, and artist names
+### Types and Interfaces
+- `src/lib/types.ts`: Shared TypeScript interfaces
+- `src/types/customer.ts`: Customer-specific type definitions
 
-### UI/UX Improvements
-- ✅ Error dropdown shows loading spinner when time period changes
-- ✅ Error rate and breakdown display loading states during data fetch
-- ✅ Improved user feedback for error data loading
-- ✅ Removed duplicate error dropdown from Product Usage header (kept the one in conversation details section)
-- ✅ Leaderboard defaults to "Sort by Errors" for better error visibility
-- ✅ Centered modal popup shows detailed error information when clicking any error badge (tool name, error type, timestamp, error message)
-- ✅ Modal features dimmed background overlay, scrollable content, and responsive design
-- ✅ Both small circular error badges and "Sort by Errors" badges trigger the same modal for consistent UX
+## Agent Template Tracking System
 
-## File Structure
+### Overview
+The agent template tracking system analyzes user behavior to identify when users are using predefined agent templates vs. creating custom prompts. This provides valuable insights into template adoption and user preferences.
 
-```
-src/
-├── app/
-│   ├── api/                    # API endpoints
-│   ├── analytics/             # Analytics pages
-│   ├── conversations/         # Conversation management
-│   └── sales-pipeline/        # Sales pipeline interface
-├── components/
-│   ├── dashboard/             # Dashboard-specific components
-│   ├── pipeline/              # Pipeline components
-│   └── ui/                    # Reusable UI components
-├── lib/
-│   ├── supabase/              # Supabase utilities
-│   └── utils.ts               # General utilities
-└── types/                     # TypeScript type definitions
-```
+### How It Works
+1. **Template Identification**: Fetches all templates from the `agent_templates` table
+2. **Prompt Matching**: Analyzes the first user message in each room to identify template usage
+3. **Matching Algorithm**: Uses text normalization and 80% word overlap similarity to match user input to template prompts
+4. **Analytics**: Provides usage statistics, user adoption rates, and timeline data
 
-**Current Status**: System migrated to use new error_logs table structure. Table exists but is empty - needs to be populated with error data to show results in dashboard.
+### Key Features
+- **Usage Statistics**: Count of how many times each template has been used
+- **User Adoption**: Track unique users and artists using templates
+- **Timeline Analysis**: First and last usage dates for each template
+- **Sample Data**: Example rooms where templates were used
+- **Time Filtering**: Analyze usage over different time periods
+- **Caching**: 5-minute cache for performance optimization
+
+### Technical Implementation
+- **API Endpoint**: `/api/agent-template-usage`
+- **Frontend Page**: `/agent-templates`
+- **Matching Logic**: Handles various content formats (string, JSONB, arrays)
+- **Performance**: Batched queries and reasonable limits to protect production database
+
+## Database Schema
+
+### Core Tables
+- `active_users`: User activity tracking
+- `rooms`: Conversation rooms with user and artist associations
+- `memories`: Individual messages within rooms
+- `accounts`: User account information
+- `account_emails`: User email mappings
+- `artists`: Artist profile information
+
+### Agent Template Tables
+- `agent_templates`: Predefined agent template prompts and metadata
+  - Used for tracking which templates users are adopting
+  - Contains template titles, prompts, categories, and creation dates
+
+### Pipeline Tables
+- `sales_pipeline_customers`: Customer pipeline management
+- `error_logs`: System error tracking and analysis
+
+## Configuration
+
+### Environment Variables
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anonymous key
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key for admin operations
+- `NEXT_PUBLIC_PRIVY_APP_ID`: Privy application ID
+- `PRIVY_API_KEY`: Privy API key
+
+### Development Setup
+1. Install dependencies: `npm install`
+2. Configure environment variables
+3. Set up Supabase connection
+4. Run development server: `npm run dev`
+
+## Recent Updates
+- Added agent template usage tracking and analytics
+- Implemented comprehensive prompt matching algorithm
+- Created dedicated agent templates dashboard page
+- Added navigation support for agent template analytics
+- Enhanced caching for better performance
+- Integrated time-based filtering for template usage analysis
 
 
 

@@ -1,6 +1,32 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// In-memory cache for power users chart data (cache for 2 minutes)
+const powerUsersChartCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// Get cached data if still valid
+function getCachedData(cacheKey: string) {
+  const cached = powerUsersChartCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+}
+
+// Set cached data
+function setCachedData(cacheKey: string, data: any) {
+  powerUsersChartCache.set(cacheKey, { data, timestamp: Date.now() });
+  
+  // Clean up old cache entries (simple cleanup)
+  if (powerUsersChartCache.size > 50) {
+    const oldestKey = powerUsersChartCache.keys().next().value;
+    if (oldestKey) {
+      powerUsersChartCache.delete(oldestKey);
+    }
+  }
+}
+
 function getPowerUserCriteria(timeFilter: string): { minDaysActive: number, minTotalActions: number } {
   switch (timeFilter) {
     case 'Last 24 Hours':
@@ -19,15 +45,33 @@ function getPowerUserCriteria(timeFilter: string): { minDaysActive: number, minT
 }
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  console.log('🔄 [POWER-USERS-CHART-API] Starting power users chart fetch');
+  
   try {
     const { searchParams } = new URL(request.url);
     const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
     const excludeTest = searchParams.get('excludeTest') === 'true';
     
+    // Create cache key (round time to nearest hour for consistency)
+    const now = new Date();
+    const cacheEnd = new Date(now);
+    cacheEnd.setMinutes(0, 0, 0);
+    const cacheKey = `power-users-chart-${timeFilter}-${excludeTest}-${cacheEnd.toISOString()}`;
+    console.log(`🔍 [POWER-USERS-CHART-API] Cache key: ${cacheKey}`);
+    
+    // Check cache first
+    const cachedData = getCachedData(cacheKey);
+    if (cachedData) {
+      const endTime = Date.now();
+      console.log(`⚡ [POWER-USERS-CHART-API] COMPLETED (CACHED) in ${endTime - startTime}ms`);
+      return NextResponse.json(cachedData);
+    }
+    
+    console.log(`🔍 [POWER-USERS-CHART-API] Cache miss, fetching from database`);
     console.log('Power Users Chart API: Generating chart data for period:', timeFilter);
     
     // Calculate date ranges and granularity based on time filter
-    const now = new Date();
     const intervals: { start: Date, end: Date, label: string }[] = [];
     
     switch (timeFilter) {
@@ -347,6 +391,11 @@ export async function GET(request: Request) {
 
     console.log('Power Users Chart API: Generated', data.length, 'data points');
     
+    // Cache the result
+    setCachedData(cacheKey, result);
+    
+    const endTime = Date.now();
+    console.log(`⚡ [POWER-USERS-CHART-API] COMPLETED in ${endTime - startTime}ms`);
     return NextResponse.json(result);
     
   } catch (error) {

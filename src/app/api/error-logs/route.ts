@@ -131,12 +131,15 @@ function getMinutesDifference(start: string, end: string): number {
 }
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  console.log('🔄 [ERROR-LOGS-API] Starting error logs fetch');
+  
   try {
     const { searchParams } = new URL(request.url)
     const days = parseInt(searchParams.get('days') || '7')
     const filterOutliers = searchParams.get('filterOutliers') === 'true'
     
-    console.log(`🔍 [ERROR-LOGS API] Starting fetch for last ${days} days, filterOutliers: ${filterOutliers}`)
+    console.log(`🔄 [ERROR-LOGS-API] Starting error logs fetch`)
     
     // Initialize Supabase client with SERVICE ROLE KEY for admin access
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -148,16 +151,10 @@ export async function GET(request: Request) {
     }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-    console.log(`🔍 [ERROR-LOGS API] Using service role key for admin access`)
-    
-    // 1. Fetch error logs for the specified time window
-    console.log(`🔍 [ERROR-LOGS API] Step 1: Fetching error logs for last ${days} days...`)
     
     // Calculate time range
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - days)
-    console.log(`🔍 [ERROR-LOGS API] Filtering from: ${startDate.toISOString()}`)
     
     const { data: errorLogs, error: errorLogsError } = await supabase
       .from('error_logs')
@@ -171,11 +168,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch error logs', details: errorLogsError.message }, { status: 500 })
     }
 
-    console.log(`✅ [ERROR-LOGS API] Found ${errorLogs?.length || 0} total error logs`)
+
     
     // 2. Detect outlier clusters
     const outlierClusters = detectOutlierClusters(errorLogs || []);
-    console.log(`🔍 [ERROR-LOGS API] Detected ${outlierClusters.length} outlier clusters:`, outlierClusters);
+
     
     // 3. Filter out outliers if requested
     let filteredErrors = errorLogs || [];
@@ -195,17 +192,16 @@ export async function GET(request: Request) {
         return true;
       });
       
-      console.log(`🔍 [ERROR-LOGS API] Filtered out ${removedErrorsCount} outlier errors, ${filteredErrors.length} remaining`);
+
     }
 
     // 4. Fetch all rooms for those room_ids to get account_id
     const roomIds = Array.from(new Set((filteredErrors || []).map(log => log.room_id).filter(Boolean)))
-    console.log(`🔍 [ERROR-LOGS API] Step 2: Found ${roomIds.length} unique room IDs`)
-    console.log(`🔍 [ERROR-LOGS API] Sample room IDs:`, roomIds.slice(0, 3))
+
 
     let roomsById: Record<string, { id: string, account_id: string | null }> = {}
     if (roomIds.length > 0) {
-      console.log(`🔍 [ERROR-LOGS API] Step 3: Fetching rooms for ${roomIds.length} room IDs...`)
+
       const { data: rooms, error: roomsError } = await supabase
         .from('rooms')
         .select('id, account_id')
@@ -215,20 +211,18 @@ export async function GET(request: Request) {
         throw new Error(`Supabase error: ${roomsError.message}`)
       }
       roomsById = Object.fromEntries((rooms || []).map(room => [room.id, room]))
-      console.log(`✅ [ERROR-LOGS API] Found ${rooms?.length || 0} rooms`)
-      console.log(`🔍 [ERROR-LOGS API] Sample room:`, rooms?.[0])
+
     } else {
-      console.log(`⚠️ [ERROR-LOGS API] No room IDs to fetch`)
+
     }
 
     // 5. Fetch all account_emails for those account_ids
     const accountIds = Array.from(new Set(Object.values(roomsById).map(room => room.account_id).filter(Boolean)))
-    console.log(`🔍 [ERROR-LOGS API] Step 4: Found ${accountIds.length} unique account IDs`)
-    console.log(`🔍 [ERROR-LOGS API] Sample account IDs:`, accountIds.slice(0, 3))
+
     
     let emailsByAccountId: Record<string, string> = {}
     if (accountIds.length > 0) {
-      console.log(`🔍 [ERROR-LOGS API] Fetching account emails for ${accountIds.length} account IDs...`)
+
       const { data: accountEmails, error: emailsError } = await supabase
         .from('account_emails')
         .select('account_id, email')
@@ -238,14 +232,13 @@ export async function GET(request: Request) {
         throw new Error(`Supabase error: ${emailsError.message}`)
       }
       emailsByAccountId = Object.fromEntries((accountEmails || []).map(ae => [ae.account_id, ae.email]))
-      console.log(`✅ [ERROR-LOGS API] Found ${accountEmails?.length || 0} account emails`)
-      console.log(`🔍 [ERROR-LOGS API] Sample account email:`, accountEmails?.[0])
+
     } else {
-      console.log(`⚠️ [ERROR-LOGS API] No account IDs to fetch emails for`)
+
     }
 
     // 6. Attach user_email to each error log
-    console.log(`🔍 [ERROR-LOGS API] Step 6: Attaching user emails to error logs...`)
+
     const logsWithEmail = (filteredErrors || []).map(log => {
       let user_email = null
       const room = roomsById[log.room_id]
@@ -256,8 +249,7 @@ export async function GET(request: Request) {
     })
 
     const logsWithUserEmail = logsWithEmail.filter(log => log.user_email)
-    console.log(`✅ [ERROR-LOGS API] Attached emails: ${logsWithUserEmail.length}/${logsWithEmail.length} errors now have user_email`)
-    console.log(`🔍 [ERROR-LOGS API] Sample error with email:`, logsWithUserEmail[0])
+
 
     // 7. Generate error breakdown by tool
     const errorBreakdown: Record<string, number> = {}
@@ -266,7 +258,7 @@ export async function GET(request: Request) {
       errorBreakdown[toolName] = (errorBreakdown[toolName] || 0) + 1
     })
 
-    console.log(`🔍 [ERROR-LOGS API] Step 7: Error breakdown by tool:`, errorBreakdown)
+
 
          const summary: ErrorSummary = {
       totalErrors: logsWithEmail.length,
@@ -278,8 +270,9 @@ export async function GET(request: Request) {
       timeRange: `${days} days`
     }
 
-    console.log(`✅ [ERROR-LOGS API] Final summary:`, summary)
-    console.log(`✅ [ERROR-LOGS API] Returning ${logsWithEmail.length} errors`)
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    console.log(`⚡ [ERROR-LOGS-API] COMPLETED in ${duration}ms - processed ${(errorLogs || []).length} errors, returning ${logsWithEmail.length}`);
 
     return NextResponse.json(summary)
     
