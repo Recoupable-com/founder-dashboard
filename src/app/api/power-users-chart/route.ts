@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface PowerUsersChartData {
+  [key: string]: unknown;
+}
+
 // In-memory cache for power users chart data (cache for 2 minutes)
-const powerUsersChartCache = new Map<string, { data: any, timestamp: number }>();
+const powerUsersChartCache = new Map<string, { data: PowerUsersChartData, timestamp: number }>();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 // Get cached data if still valid
@@ -15,7 +20,7 @@ function getCachedData(cacheKey: string) {
 }
 
 // Set cached data
-function setCachedData(cacheKey: string, data: any) {
+function setCachedData(cacheKey: string, data: PowerUsersChartData) {
   powerUsersChartCache.set(cacheKey, { data, timestamp: Date.now() });
   
   // Clean up old cache entries (simple cleanup)

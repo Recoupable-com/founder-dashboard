@@ -13,13 +13,7 @@ interface ContentPart {
   [key: string]: unknown;
 }
 
-interface MemoryContent {
-  role?: string;
-  content?: string;
-  parts?: ContentPart[];
-  reasoning?: string;
-  [key: string]: unknown;
-}
+
 
 export const dynamic = 'force-dynamic';
 
@@ -280,15 +274,16 @@ export async function GET(request: Request) {
                   }
                 } else if (typeof obj === 'object' && obj !== null) {
                   // Look for text fields specifically
-                  if (obj.text && typeof obj.text === 'string' && obj.text !== '[object Object]') {
-                    texts.push(obj.text);
+                  const objWithProps = obj as Record<string, unknown>;
+                  if (objWithProps.text && typeof objWithProps.text === 'string' && objWithProps.text !== '[object Object]') {
+                    texts.push(objWithProps.text);
                   }
-                  if (obj.content && typeof obj.content === 'string' && obj.content !== '[object Object]') {
-                    texts.push(obj.content);
+                  if (objWithProps.content && typeof objWithProps.content === 'string' && objWithProps.content !== '[object Object]') {
+                    texts.push(objWithProps.content);
                   }
                   
                   // Recursively search all object properties
-                  for (const value of Object.values(obj)) {
+                  for (const value of Object.values(objWithProps)) {
                     texts.push(...extractAllText(value));
                   }
                 }
@@ -373,15 +368,16 @@ export async function GET(request: Request) {
                   }
                 } else if (typeof obj === 'object' && obj !== null) {
                   // Look for text fields specifically
-                  if (obj.text && typeof obj.text === 'string' && obj.text !== '[object Object]') {
-                    texts.push(obj.text);
+                  const objWithProps = obj as Record<string, unknown>;
+                  if (objWithProps.text && typeof objWithProps.text === 'string' && objWithProps.text !== '[object Object]') {
+                    texts.push(objWithProps.text);
                   }
-                  if (obj.content && typeof obj.content === 'string' && obj.content !== '[object Object]') {
-                    texts.push(obj.content);
+                  if (objWithProps.content && typeof objWithProps.content === 'string' && objWithProps.content !== '[object Object]') {
+                    texts.push(objWithProps.content);
                   }
                   
                   // Recursively search all object properties
-                  for (const value of Object.values(obj)) {
+                  for (const value of Object.values(objWithProps)) {
                     texts.push(...extractAllText(value));
                   }
                 }

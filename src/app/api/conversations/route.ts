@@ -2,8 +2,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface ConversationsData {
+  [key: string]: unknown;
+}
+
 // In-memory cache for conversations data (cache for 2 minutes)
-const conversationsCache = new Map<string, { data: any, timestamp: number }>();
+const conversationsCache = new Map<string, { data: ConversationsData, timestamp: number }>();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 // Get cached data if still valid
@@ -16,7 +21,7 @@ function getCachedData(cacheKey: string) {
 }
 
 // Set cached data
-function setCachedData(cacheKey: string, data: any) {
+function setCachedData(cacheKey: string, data: ConversationsData) {
   conversationsCache.set(cacheKey, { data, timestamp: Date.now() });
   
   // Clean up old cache entries (simple cleanup)

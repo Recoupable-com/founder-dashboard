@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache interface
+interface CacheEntry {
+  data: unknown;
+  timestamp: number;
+}
+
 // Cache for template matching results (5 minutes)
-const cache = new Map<string, unknown>();
+const cache = new Map<string, CacheEntry>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Interface for template usage analytics
@@ -32,8 +38,32 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+// Define interface for memory content
+interface MemoryContentType {
+  text?: string;
+  content?: string;
+  parts?: Array<{text?: string; type?: string}>;
+  [key: string]: unknown;
+}
+
+// Define interfaces for memory and room objects
+interface MemoryObject {
+  id: string;
+  content: MemoryContentType | string;
+  room_id: string;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
+interface RoomObject {
+  id: string;
+  account_id: string;
+  artist_id: string;
+  [key: string]: unknown;
+}
+
 // Function to check if memory content matches template prompt - EXACT MATCH ONLY
-function isTemplateMatch(memoryContent: any, templatePrompt: string): boolean {
+function isTemplateMatch(memoryContent: MemoryContentType | string, templatePrompt: string): boolean {
   try {
     let textContent = '';
     
@@ -223,7 +253,7 @@ export async function GET(request: Request) {
     console.log(`📝 [AGENT-TEMPLATE-USAGE] Fetching memories created in time period for ${allowedAccountIdsArray.length} accounts...`);
     
     // Fetch all rooms for non-test accounts first (we need room metadata)
-    const allRooms: any[] = [];
+    const allRooms: Array<{id: string; account_id: string; artist_id: string}> = [];
     const roomBatchSize = 100;
     
     for (let i = 0; i < allowedAccountIdsArray.length; i += roomBatchSize) {
@@ -305,7 +335,7 @@ export async function GET(request: Request) {
     for (const template of templatesToAnalyze) {
       console.log(`🔍 [AGENT-TEMPLATE-USAGE] Analyzing template: "${template.title}"`);
       
-      const matches: any[] = [];
+              const matches: Array<{memory: MemoryObject; room: RoomObject}> = [];
       
       for (const memory of firstMemories) {
         if (isTemplateMatch(memory.content, template.prompt)) {

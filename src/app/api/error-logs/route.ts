@@ -248,9 +248,6 @@ export async function GET(request: Request) {
       return { ...log, user_email }
     })
 
-    const logsWithUserEmail = logsWithEmail.filter(log => log.user_email)
-
-
     // 7. Generate error breakdown by tool
     const errorBreakdown: Record<string, number> = {}
     logsWithEmail.forEach(log => {

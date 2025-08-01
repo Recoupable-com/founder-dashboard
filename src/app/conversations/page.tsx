@@ -55,7 +55,7 @@ export default function ConversationsPage() {
   const apiCallTracker = React.useRef(new Map<string, number>());
 
   // Helper function to track API calls
-  const trackApiCall = (name: string, promise: Promise<any>) => {
+  const trackApiCall = (name: string, promise: Promise<unknown>) => {
     const callId = `${name}-${Date.now()}`;
     const startTime = Date.now();
     
