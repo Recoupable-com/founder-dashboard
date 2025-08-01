@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  console.log('🔄 [SEGMENT-ACTIONS-API] Starting segment actions fetch');
   const { searchParams } = new URL(request.url);
   const start_date = searchParams.get('start_date');
   const end_date = searchParams.get('end_date');
@@ -85,6 +87,9 @@ export async function GET(request: Request) {
       segment_action_count 
     }));
 
+    const endTime = Date.now();
+    console.log(`⚡ [SEGMENT-ACTIONS-API] COMPLETED in ${endTime - startTime}ms`);
+    
     return NextResponse.json({ 
       segmentActions: segmentActionsList,
       totalSegmentActions: segmentActions.length,

@@ -1,8 +1,58 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface ArtistCountsData {
+  [key: string]: unknown;
+}
+
+// In-memory cache for artist counts data (cache for 2 minutes)
+const artistCountsCache = new Map<string, { data: ArtistCountsData, timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// Get cached data if still valid
+function getCachedData(cacheKey: string) {
+  const cached = artistCountsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+}
+
+// Set cached data
+function setCachedData(cacheKey: string, data: ArtistCountsData) {
+  artistCountsCache.set(cacheKey, { data, timestamp: Date.now() });
+  
+  // Clean up old cache entries (simple cleanup)
+  if (artistCountsCache.size > 50) {
+    const oldestKey = artistCountsCache.keys().next().value;
+    if (oldestKey) {
+      artistCountsCache.delete(oldestKey);
+    }
+  }
+}
+
 export async function GET() {
+  const startTime = Date.now();
+  console.log('🔄 [ARTIST-COUNTS-API] Starting artist counts fetch');
+  
   try {
+    // Create cache key (artist counts don't change frequently, so hourly cache is fine)
+    const now = new Date();
+    const cacheEnd = new Date(now);
+    cacheEnd.setMinutes(0, 0, 0);
+    const cacheKey = `artist-counts-${cacheEnd.toISOString()}`;
+    console.log(`🔍 [ARTIST-COUNTS-API] Cache key: ${cacheKey}`);
+    
+    // Check cache first
+    const cachedData = getCachedData(cacheKey);
+    if (cachedData) {
+      const endTime = Date.now();
+      console.log(`⚡ [ARTIST-COUNTS-API] COMPLETED (CACHED) in ${endTime - startTime}ms`);
+      return NextResponse.json(cachedData);
+    }
+    
+    console.log(`🔍 [ARTIST-COUNTS-API] Cache miss, fetching from database`);
     console.log('🎨 Artist counts by email API: Starting...');
 
     // NEW APPROACH: Get users from a working API that bypasses RLS issues
@@ -63,7 +113,7 @@ export async function GET() {
     console.log(`   Total users with artists: ${totalUsers}`);
     console.log(`   Average artists per user: ${totalUsers > 0 ? (totalArtists / totalUsers).toFixed(2) : 0}`);
 
-    return NextResponse.json({
+    const result = {
       success: true,
       data: {
         artistCountsByEmail,
@@ -74,7 +124,14 @@ export async function GET() {
           averageArtistsPerUser: totalUsers > 0 ? Math.round((totalArtists / totalUsers) * 100) / 100 : 0
         }
       }
-    });
+    };
+
+    // Cache the result
+    setCachedData(cacheKey, result);
+    
+    const endTime = Date.now();
+    console.log(`⚡ [ARTIST-COUNTS-API] COMPLETED in ${endTime - startTime}ms`);
+    return NextResponse.json(result);
 
   } catch (error) {
     console.error('❌ Exception in artist-counts-by-email API:', error);

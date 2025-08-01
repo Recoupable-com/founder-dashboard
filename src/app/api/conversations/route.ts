@@ -2,8 +2,40 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface ConversationsData {
+  [key: string]: unknown;
+}
+
+// In-memory cache for conversations data (cache for 2 minutes)
+const conversationsCache = new Map<string, { data: ConversationsData, timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// Get cached data if still valid
+function getCachedData(cacheKey: string) {
+  const cached = conversationsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+}
+
+// Set cached data
+function setCachedData(cacheKey: string, data: ConversationsData) {
+  conversationsCache.set(cacheKey, { data, timestamp: Date.now() });
+  
+  // Clean up old cache entries (simple cleanup)
+  if (conversationsCache.size > 50) {
+    const oldestKey = conversationsCache.keys().next().value;
+    if (oldestKey) {
+      conversationsCache.delete(oldestKey);
+    }
+  }
+}
+
 export async function GET(request: NextRequest) {
-  console.log('API ROUTE: Starting conversations fetch');
+  const startTime = Date.now();
+  console.log('🔄 [CONVERSATIONS-API] Starting conversations fetch');
   try {
     const { searchParams } = new URL(request.url);
     const searchQuery = searchParams.get('search') || '';
@@ -13,11 +45,26 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100');
     const userFilter = searchParams.get('userFilter') || '';
     
+    // Create cache key (round time to nearest hour for consistency)
+    const now = new Date();
+    const cacheEnd = new Date(now);
+    cacheEnd.setMinutes(0, 0, 0);
+    const cacheKey = `conversations-${timeFilter}-${excludeTestEmails}-${userFilter}-${searchQuery}-${page}-${limit}-${cacheEnd.toISOString()}`;
+    console.log(`🔍 [CONVERSATIONS-API] Cache key: ${cacheKey}`);
+    
+    // Check cache first
+    const cachedData = getCachedData(cacheKey);
+    if (cachedData) {
+      const endTime = Date.now();
+      console.log(`⚡ [CONVERSATIONS-API] COMPLETED (CACHED) in ${endTime - startTime}ms`);
+      return NextResponse.json(cachedData);
+    }
+    
+    console.log(`🔍 [CONVERSATIONS-API] Cache miss, fetching from database`);
     console.log(`API ROUTE: Parameters - timeFilter: ${timeFilter}, userFilter: ${userFilter}, excludeTest: ${excludeTestEmails}`);
 
     // Helper function to get date range for time filter
     function getDateRangeForTimeFilter(filter: string): { start: string | null, end: string } {
-      const now = new Date();
       const end = now.toISOString();
       
       switch (filter) {
@@ -655,17 +702,17 @@ export async function GET(request: NextRequest) {
     const hasMore = page < totalPages;
 
     // Calculate conversation counts by time period for percentage calculations
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const nowTime = new Date();
+    const startOfToday = new Date(nowTime.getFullYear(), nowTime.getMonth(), nowTime.getDate());
     const startOfYesterday = new Date(startOfToday);
     startOfYesterday.setDate(startOfToday.getDate() - 1);
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
+    const startOfWeek = new Date(nowTime);
+    startOfWeek.setDate(nowTime.getDate() - nowTime.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
     const startOfPrevWeek = new Date(startOfWeek);
     startOfPrevWeek.setDate(startOfWeek.getDate() - 7);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const startOfMonth = new Date(nowTime.getFullYear(), nowTime.getMonth(), 1);
+    const startOfPrevMonth = new Date(nowTime.getFullYear(), nowTime.getMonth() - 1, 1);
     
     const conversationCounts = {
       today: 0,
@@ -893,7 +940,8 @@ export async function GET(request: NextRequest) {
           conversation.account_email?.toLowerCase?.().trim() === userFilter.toLowerCase().trim()
       );
       console.log('[API] Emails after userFilter:', filteredResult.map(c => c.account_email));
-      return NextResponse.json({
+      
+      const filteredResultData = {
         conversations: filteredResult,
         totalCount: actualTotalForPagination,
         totalUniqueUsers: filteredTotalUniqueUsers,
@@ -903,12 +951,19 @@ export async function GET(request: NextRequest) {
         filtered: true,
         originalCount: result.length,
         conversationCounts
-      });
+      };
+
+      // Cache the filtered result
+      setCachedData(cacheKey, filteredResultData);
+      
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.log(`⚡ [CONVERSATIONS-API] COMPLETED in ${duration}ms - returning ${filteredResult.length} filtered conversations`);
+      
+      return NextResponse.json(filteredResultData);
     }
 
-    console.log(`API ROUTE: Returning ${result.length} total conversations (page ${page}/${totalPages})`);
-    
-    return NextResponse.json({
+    const resultData = {
       conversations: result,
       totalCount: actualTotalForPagination,
       totalUniqueUsers: filteredTotalUniqueUsers,
@@ -918,7 +973,16 @@ export async function GET(request: NextRequest) {
       filtered: searchFilteredRoomIds !== null || Boolean(userFilter),
       originalCount: filteredTotalRooms,
       conversationCounts
-    });
+    };
+
+    // Cache the result
+    setCachedData(cacheKey, resultData);
+    
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    console.log(`⚡ [CONVERSATIONS-API] COMPLETED in ${duration}ms - returning ${result.length} conversations (page ${page}/${totalPages})`);
+    
+    return NextResponse.json(resultData);
   } catch (error) {
     console.error('API ROUTE: Uncaught error processing request:', error);
     return NextResponse.json([createFallbackConversation()]);

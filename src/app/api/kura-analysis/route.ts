@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const { 
       limit = 20, 
       excludeTestEmails = true,
-      timeFilter = 'Last 30 Days' 
+      timeFilter = 'Last 7 Days' 
     } = body;
 
     console.log('Kura analysis parameters:', { limit, excludeTestEmails, timeFilter });

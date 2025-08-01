@@ -22,7 +22,7 @@ function getIntervals(timeFilter: string) {
 export async function POST(request: Request) {
   const body = await request.json();
   const emails: string[] = body.emails;
-  const timeFilter: string = body.timeFilter || 'Last 30 Days';
+      const timeFilter: string = body.timeFilter || 'Last 7 Days';
   
   console.log('[CONSISTENCY] Processing', emails.length, 'emails in parallel, timeFilter:', timeFilter);
   

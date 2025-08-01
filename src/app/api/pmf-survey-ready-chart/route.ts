@@ -1,23 +1,73 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface PMFSurveyReadyChartData {
+  [key: string]: unknown;
+}
+
+// In-memory cache for PMF survey ready chart data (cache for 2 minutes)
+const pmfSurveyReadyChartCache = new Map<string, { data: PMFSurveyReadyChartData, timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// Get cached data if still valid
+function getCachedData(cacheKey: string) {
+  const cached = pmfSurveyReadyChartCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+}
+
+// Set cached data
+function setCachedData(cacheKey: string, data: PMFSurveyReadyChartData) {
+  pmfSurveyReadyChartCache.set(cacheKey, { data, timestamp: Date.now() });
+  
+  // Clean up old cache entries (simple cleanup)
+  if (pmfSurveyReadyChartCache.size > 50) {
+    const oldestKey = pmfSurveyReadyChartCache.keys().next().value;
+    if (oldestKey) {
+      pmfSurveyReadyChartCache.delete(oldestKey);
+    }
+  }
+}
+
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  console.log('🔄 [PMF-SURVEY-READY-CHART-API] Starting PMF survey ready chart fetch');
+  
   try {
     const { searchParams } = new URL(request.url);
-    const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
+    const timeFilter = searchParams.get('timeFilter') || 'Last 7 Days';
     const excludeTest = searchParams.get('excludeTest') === 'true';
     
-    console.log('PMF Survey Ready Chart API: Generating chart data for period:', timeFilter);
-    
     // Calculate date ranges and granularity based on time filter
-    const now = new Date();
+    const nowTime = new Date();
+    
+    // Create cache key (round time to nearest hour for consistency)
+    const cacheEnd = new Date(nowTime);
+    cacheEnd.setMinutes(0, 0, 0);
+    const cacheKey = `pmf-survey-ready-chart-${timeFilter}-${excludeTest}-${cacheEnd.toISOString()}`;
+    console.log(`🔍 [PMF-SURVEY-READY-CHART-API] Cache key: ${cacheKey}`);
+    
+    // Check cache first
+    const cachedData = getCachedData(cacheKey);
+    if (cachedData) {
+      const endTime = Date.now();
+      console.log(`⚡ [PMF-SURVEY-READY-CHART-API] COMPLETED (CACHED) in ${endTime - startTime}ms`);
+      return NextResponse.json(cachedData);
+    }
+    
+    console.log(`🔍 [PMF-SURVEY-READY-CHART-API] Cache miss, fetching from database`);
+    
+    console.log('PMF Survey Ready Chart API: Generating chart data for period:', timeFilter);
     const intervals: { start: Date, end: Date, label: string }[] = [];
     
     switch (timeFilter) {
       case 'Last 24 Hours':
         // Hourly intervals for last 24 hours
         for (let i = 23; i >= 0; i--) {
-          const end = new Date(now.getTime() - i * 60 * 60 * 1000);
+          const end = new Date(nowTime.getTime() - i * 60 * 60 * 1000);
           const start = new Date(end.getTime() - 60 * 60 * 1000);
           intervals.push({
             start,
@@ -30,8 +80,8 @@ export async function GET(request: Request) {
       case 'Last 7 Days':
         // Daily intervals for last 7 days
         for (let i = 6; i >= 0; i--) {
-          const start = new Date(now);
-          start.setDate(now.getDate() - i);
+          const start = new Date(nowTime);
+          start.setDate(nowTime.getDate() - i);
           start.setHours(0, 0, 0, 0);
           const end = new Date(start);
           end.setHours(23, 59, 59, 999);
@@ -46,8 +96,8 @@ export async function GET(request: Request) {
       case 'Last 30 Days':
         // Daily intervals for last 30 days
         for (let i = 29; i >= 0; i--) {
-          const start = new Date(now);
-          start.setDate(now.getDate() - i);
+          const start = new Date(nowTime);
+          start.setDate(nowTime.getDate() - i);
           start.setHours(0, 0, 0, 0);
           const end = new Date(start);
           end.setHours(23, 59, 59, 999);
@@ -62,8 +112,8 @@ export async function GET(request: Request) {
       case 'Last 3 Months':
         // Weekly intervals for last 3 months
         for (let i = 12; i >= 0; i--) {
-          const end = new Date(now);
-          end.setDate(now.getDate() - i * 7);
+          const end = new Date(nowTime);
+          end.setDate(nowTime.getDate() - i * 7);
           const start = new Date(end);
           start.setDate(end.getDate() - 6);
           start.setHours(0, 0, 0, 0);
@@ -79,8 +129,8 @@ export async function GET(request: Request) {
       case 'Last 12 Months':
         // Monthly intervals for last 12 months
         for (let i = 11; i >= 0; i--) {
-          const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+          const start = new Date(nowTime.getFullYear(), nowTime.getMonth() - i, 1);
+          const end = new Date(nowTime.getFullYear(), nowTime.getMonth() - i + 1, 0, 23, 59, 59, 999);
           intervals.push({
             start,
             end,
@@ -92,8 +142,8 @@ export async function GET(request: Request) {
       default:
         // Default to last 30 days
         for (let i = 29; i >= 0; i--) {
-          const start = new Date(now);
-          start.setDate(now.getDate() - i);
+          const start = new Date(nowTime);
+          start.setDate(nowTime.getDate() - i);
           start.setHours(0, 0, 0, 0);
           const end = new Date(start);
           end.setHours(23, 59, 59, 999);
@@ -273,6 +323,12 @@ export async function GET(request: Request) {
     };
 
     console.log('PMF Survey Ready Chart API: Generated', data.length, 'data points');
+    
+    // Cache the result
+    setCachedData(cacheKey, result);
+    
+    const endTime = Date.now();
+    console.log(`⚡ [PMF-SURVEY-READY-CHART-API] COMPLETED in ${endTime - startTime}ms`);
     
     return NextResponse.json(result);
     

@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
   try {
     const { searchParams } = new URL(request.url);
-    const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
+    const timeFilter = searchParams.get('timeFilter') || 'Last 7 Days';
     const excludeTest = searchParams.get('excludeTest') === 'true';
     
     console.log('Active Users API: Calculating active users for period:', timeFilter);
@@ -169,7 +170,9 @@ export async function GET(request: Request) {
       excludeTest
     };
 
-    console.log('Active Users API: Result:', result);
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    console.log(`⚡ [ACTIVE-USERS-API] COMPLETED in ${duration}ms - Current: ${currentActiveUsers}, Previous: ${previousActiveUsers}`);
     
     return NextResponse.json(result);
     

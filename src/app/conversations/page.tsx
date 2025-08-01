@@ -49,6 +49,29 @@ import UserFilter from '@/components/UserFilter';
 import MetricsSection, { MetricType } from '@/components/MetricsSection';
 
 export default function ConversationsPage() {
+  // Performance tracking
+  const pageLoadStart = React.useRef(Date.now());
+  const [apiCallsInProgress, setApiCallsInProgress] = React.useState(0);
+  const apiCallTracker = React.useRef(new Map<string, number>());
+
+  // Helper function to track API calls
+  const trackApiCall = (name: string, promise: Promise<unknown>) => {
+    const callId = `${name}-${Date.now()}`;
+    const startTime = Date.now();
+    
+    setApiCallsInProgress(prev => prev + 1);
+    apiCallTracker.current.set(callId, startTime);
+    console.log(`🚀 [PERFORMANCE] Starting API call: ${name} (${apiCallsInProgress + 1} calls in progress)`);
+    
+    return promise.finally(() => {
+      const endTime = Date.now();
+      const duration = endTime - (apiCallTracker.current.get(callId) || endTime);
+      apiCallTracker.current.delete(callId);
+      setApiCallsInProgress(prev => prev - 1);
+      console.log(`⚡ [PERFORMANCE] Completed API call: ${name} in ${duration}ms (${apiCallsInProgress - 1} calls remaining)`);
+    });
+  };
+
   // Helper function to detect if an identifier is a wallet address
   const isWalletAddress = (identifier: string): boolean => {
     // Ethereum addresses are 42 characters and start with 0x
@@ -70,7 +93,7 @@ export default function ConversationsPage() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeTestEmails, setExcludeTestEmails] = useState(true);
-  const [timeFilter, setTimeFilter] = useState('Last 30 Days');
+  const [timeFilter, setTimeFilter] = useState('Last 7 Days');
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -985,7 +1008,7 @@ export default function ConversationsPage() {
     if (start && end) {
       url += `?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`;
     }
-    fetch(url)
+    trackApiCall('message-counts', fetch(url)
       .then(res => res.json())
       .then((data: { account_email: string, message_count: number }[]) => {
         const map: Record<string, number> = {};
@@ -993,7 +1016,7 @@ export default function ConversationsPage() {
           map[row.account_email] = row.message_count;
         }
         setMessagesByUser(map);
-      })
+      }))
       .finally(() => setLeaderboardLoading(false));
   }, [timeFilter]);
 
@@ -1004,7 +1027,7 @@ export default function ConversationsPage() {
     if (start && end) {
       url += `?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`;
     }
-    fetch(url)
+    trackApiCall('leaderboard', fetch(url)
       .then(res => res.json())
       .then((data: { scheduledActions: { email: string, scheduled_action_count: number }[] }) => {
         const map: Record<string, number> = {};
@@ -1012,8 +1035,16 @@ export default function ConversationsPage() {
           map[row.email] = row.scheduled_action_count;
         }
         setScheduledActionsByUser(map);
-      });
+      }));
   }, [timeFilter]);
+
+  // Track when all API calls complete  
+  React.useEffect(() => {
+    if (apiCallsInProgress === 0 && pageLoadStart.current > 0) {
+      const totalLoadTime = Date.now() - pageLoadStart.current;
+      console.log(`🏁 [PERFORMANCE] All API calls completed! Total page load time: ${totalLoadTime}ms`);
+    }
+  }, [apiCallsInProgress]);
 
   // Fetch segment action counts from the API when timeFilter changes
   useEffect(() => {

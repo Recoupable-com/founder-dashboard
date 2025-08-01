@@ -1,7 +1,40 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface LeaderboardData {
+  [key: string]: unknown;
+}
+
+// In-memory cache for leaderboard data (cache for 2 minutes)
+const leaderboardCache = new Map<string, { data: LeaderboardData, timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// Get cached data if still valid
+function getCachedData(cacheKey: string) {
+  const cached = leaderboardCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+}
+
+// Set cached data
+function setCachedData(cacheKey: string, data: LeaderboardData) {
+  leaderboardCache.set(cacheKey, { data, timestamp: Date.now() });
+  
+  // Clean up old cache entries (simple cleanup)
+  if (leaderboardCache.size > 50) {
+    const oldestKey = leaderboardCache.keys().next().value;
+    if (oldestKey) {
+      leaderboardCache.delete(oldestKey);
+    }
+  }
+}
+
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  console.log('🔄 [LEADERBOARD-API] Starting leaderboard fetch');
   const { searchParams } = new URL(request.url);
   const start_date = searchParams.get('start_date');
   const end_date = searchParams.get('end_date');
@@ -12,7 +45,26 @@ export async function GET(request: Request) {
   const now = new Date();
   const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const start = start_date || defaultStart;
-  const end = end_date || now.toISOString();
+  
+  // For caching consistency, always round end time to nearest hour for cache key
+  const actualEnd = end_date || now.toISOString();
+  const cacheEnd = new Date(actualEnd);
+  cacheEnd.setMinutes(0, 0, 0); // Round to start of current hour for consistent cache keys
+  
+  // Use actual end time for database queries, rounded end time for cache key
+  const end = actualEnd;
+  const cacheKey = `leaderboard-${start}-${cacheEnd.toISOString()}`;
+  console.log(`🔍 [LEADERBOARD-API] Cache key: ${cacheKey}`);
+  
+  // Check cache first
+  const cachedData = getCachedData(cacheKey);
+  if (cachedData) {
+    const endTime = Date.now();
+    console.log(`⚡ [LEADERBOARD-API] COMPLETED (CACHED) in ${endTime - startTime}ms`);
+    return NextResponse.json(cachedData);
+  }
+  
+  console.log(`🔍 [LEADERBOARD-API] Cache miss, fetching from database`);
 
   // Calculate previous period dates for trend comparison
   const startDate = new Date(start);
@@ -221,8 +273,16 @@ export async function GET(request: Request) {
     scheduled_action_count 
   }));
 
-  return NextResponse.json({ 
+  const result = { 
     leaderboard,
     scheduledActions 
-  });
+  };
+  
+  // Cache the result
+  setCachedData(cacheKey, result);
+  
+  const endTime = Date.now();
+  console.log(`⚡ [LEADERBOARD-API] COMPLETED in ${endTime - startTime}ms`);
+  
+  return NextResponse.json(result);
 } 
