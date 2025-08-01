@@ -92,7 +92,7 @@ function isTemplateMatch(memoryContent: any, templatePrompt: string): boolean {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
+    const timeFilter = searchParams.get('timeFilter') || 'Last 7 Days';
     const templateId = searchParams.get('templateId'); // Optional: analyze specific template
     
     console.log(`🎯 [AGENT-TEMPLATE-USAGE] Starting analysis for ${timeFilter}${templateId ? ` (template: ${templateId})` : ''}`);

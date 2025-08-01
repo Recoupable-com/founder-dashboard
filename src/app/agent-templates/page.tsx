@@ -42,7 +42,7 @@ export default function AgentTemplatesPage() {
   const [data, setData] = useState<AgentTemplateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeFilter, setTimeFilter] = useState('Last 30 Days');
+  const [timeFilter, setTimeFilter] = useState('Last 7 Days');
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   const toggleCardExpansion = (templateId: string) => {

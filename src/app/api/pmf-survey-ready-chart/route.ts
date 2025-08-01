@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   
   try {
     const { searchParams } = new URL(request.url);
-    const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
+    const timeFilter = searchParams.get('timeFilter') || 'Last 7 Days';
     const excludeTest = searchParams.get('excludeTest') === 'true';
     
     // Calculate date ranges and granularity based on time filter

@@ -93,7 +93,7 @@ export default function ConversationsPage() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [excludeTestEmails, setExcludeTestEmails] = useState(true);
-  const [timeFilter, setTimeFilter] = useState('Last 30 Days');
+  const [timeFilter, setTimeFilter] = useState('Last 7 Days');
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);

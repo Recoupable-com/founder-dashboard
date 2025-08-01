@@ -5,7 +5,7 @@ export async function GET(request: Request) {
   const startTime = Date.now();
   try {
     const { searchParams } = new URL(request.url);
-    const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
+    const timeFilter = searchParams.get('timeFilter') || 'Last 7 Days';
     const excludeTest = searchParams.get('excludeTest') === 'true';
     
     console.log('Active Users API: Calculating active users for period:', timeFilter);

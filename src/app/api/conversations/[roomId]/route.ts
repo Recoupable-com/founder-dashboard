@@ -222,50 +222,184 @@ export async function GET(request: Request) {
           if (msg.content.reasoning && typeof msg.content.reasoning === 'string') {
             reasoningText = msg.content.reasoning;
           }
+          // Also check for reasoning in parts array (AISDK V5 structure)
+          else if (msg.content.parts && Array.isArray(msg.content.parts)) {
+            // Enhanced recursive reasoning extraction for complex nested structures
+            const extractReasoningFromParts = (parts: any[]): string[] => {
+              const reasoningTexts: string[] = [];
+              
+              for (const part of parts) {
+                if (typeof part === 'object' && part !== null) {
+                  // Direct reasoning from type="reasoning" parts
+                  if (part.type === 'reasoning' && part.text && typeof part.text === 'string') {
+                    reasoningTexts.push(part.text);
+                  }
+                  // Reasoning from state="done" parts
+                  else if (part.type === 'reasoning' && part.state === 'done' && part.text && typeof part.text === 'string') {
+                    reasoningTexts.push(part.text);
+                  }
+                  // Recursively search nested parts arrays
+                  else if (part.parts && Array.isArray(part.parts)) {
+                    reasoningTexts.push(...extractReasoningFromParts(part.parts));
+                  }
+                }
+              }
+              
+              return reasoningTexts;
+            };
+            
+            const extractedReasoning = extractReasoningFromParts(msg.content.parts);
+            
+            if (extractedReasoning.length > 0) {
+              reasoningText = extractedReasoning.join('\n\n');
+            }
+          }
           
+          // Check if content is corrupted with "[object Object]" and force enhanced extraction
+          if (typeof msg.content.content === 'string' && msg.content.content.includes('[object Object]')) {
+            // Force enhanced extraction for corrupted content
+            if (msg.content.parts && Array.isArray(msg.content.parts)) {
+              const extractAllText = (obj: any): string[] => {
+                const texts: string[] = [];
+                
+                if (typeof obj === 'string' && obj !== '[object Object]' && obj.trim().length > 0) {
+                  texts.push(obj);
+                } else if (Array.isArray(obj)) {
+                  for (const item of obj) {
+                    texts.push(...extractAllText(item));
+                  }
+                } else if (typeof obj === 'object' && obj !== null) {
+                  // Look for text fields specifically
+                  if (obj.text && typeof obj.text === 'string' && obj.text !== '[object Object]') {
+                    texts.push(obj.text);
+                  }
+                  if (obj.content && typeof obj.content === 'string' && obj.content !== '[object Object]') {
+                    texts.push(obj.content);
+                  }
+                  
+                  // Recursively search all object properties
+                  for (const value of Object.values(obj)) {
+                    texts.push(...extractAllText(value));
+                  }
+                }
+                
+                return texts;
+              };
+              
+              const allTexts = extractAllText(msg.content.parts);
+              // Filter out very short texts, URLs, IDs, and duplicates
+              const meaningfulTexts = [...new Set(allTexts)]
+                .filter(text => 
+                  text.length > 10 && 
+                  !text.includes('spotify:') && 
+                  !text.includes('https://') &&
+                  !text.includes('api.spotify.com') &&
+                  !text.includes('"id":') &&
+                  !text.includes('"href":') &&
+                  !text.startsWith('tool-') &&
+                  !text.match(/^[a-f0-9-]{36}$/) // Filter out UUIDs
+                );
+              
+              if (meaningfulTexts.length > 0) {
+                messageText = meaningfulTexts.slice(0, 3).join('\n\n'); // Use enhanced extraction
+              }
+            }
+          }
           // First try: Direct content field (usually clean user-facing text)
-          if (typeof msg.content.content === 'string' && !msg.content.content.includes('perplexity_ask')) {
+          else if (typeof msg.content.content === 'string' && 
+              !msg.content.content.includes('perplexity_ask')) {
             messageText = msg.content.content;
           }
           // Second try: Look for text-type parts that aren't reasoning
           else if (msg.content.parts && Array.isArray(msg.content.parts)) {
-            // Find the parts with type="text" (excluding reasoning parts)
-            const textParts = msg.content.parts
-              .filter((part: ContentPart) => {
-                if (typeof part === 'object') {
-                  return part.type === 'text';
-                }
-                return false;
-              })
-              .map((part: ContentPart) => {
-                if (typeof part === 'object' && part.text) {
-                  return part.text;
-                }
-                return '';
-              })
-              .filter((text: string) => text !== '');
+            // Enhanced recursive text extraction for complex nested structures
+            const extractTextFromParts = (parts: any[]): string[] => {
+              const texts: string[] = [];
               
-            if (textParts.length > 0) {
-              messageText = textParts.join('\n\n');
-            } 
-            // If no clean text parts found, look for any text content
-            else {
-              const allTextParts = msg.content.parts.map((part: ContentPart) => {
-                if (typeof part === 'string') return part;
-                if (typeof part === 'object') {
-                  if (part.text && typeof part.text === 'string') return part.text;
-                  if (part.content && typeof part.content === 'string') return part.content;
+              for (const part of parts) {
+                if (typeof part === 'string') {
+                  texts.push(part);
+                } else if (typeof part === 'object' && part !== null) {
+                  // Direct text from type="text" parts
+                  if (part.type === 'text' && part.text && typeof part.text === 'string') {
+                    texts.push(part.text);
+                  }
+                  // Text from state="done" parts
+                  else if (part.type === 'text' && part.state === 'done' && part.text && typeof part.text === 'string') {
+                    texts.push(part.text);
+                  }
+                  // Recursively search nested parts arrays
+                  else if (part.parts && Array.isArray(part.parts)) {
+                    texts.push(...extractTextFromParts(part.parts));
+                  }
+                  // Handle other text fields
+                  else if (part.content && typeof part.content === 'string') {
+                    texts.push(part.content);
+                  }
                 }
-                return '';
-              }).filter((text: string) => text !== '');
+              }
               
-              if (allTextParts.length > 0) {
-                messageText = allTextParts.join(' ');
+              return texts;
+            };
+            
+            const extractedTexts = extractTextFromParts(msg.content.parts);
+            
+            if (extractedTexts.length > 0) {
+              messageText = extractedTexts.join('\n\n');
+            }
+          }
+          // Third try: Enhanced extraction as fallback
+          else if (!messageText) {
+            // For corrupted content fields, try to extract text from any available structure
+            if (msg.content.parts && Array.isArray(msg.content.parts)) {
+              const extractAllText = (obj: any): string[] => {
+                const texts: string[] = [];
+                
+                if (typeof obj === 'string' && obj !== '[object Object]' && obj.trim().length > 0) {
+                  texts.push(obj);
+                } else if (Array.isArray(obj)) {
+                  for (const item of obj) {
+                    texts.push(...extractAllText(item));
+                  }
+                } else if (typeof obj === 'object' && obj !== null) {
+                  // Look for text fields specifically
+                  if (obj.text && typeof obj.text === 'string' && obj.text !== '[object Object]') {
+                    texts.push(obj.text);
+                  }
+                  if (obj.content && typeof obj.content === 'string' && obj.content !== '[object Object]') {
+                    texts.push(obj.content);
+                  }
+                  
+                  // Recursively search all object properties
+                  for (const value of Object.values(obj)) {
+                    texts.push(...extractAllText(value));
+                  }
+                }
+                
+                return texts;
+              };
+              
+              const allTexts = extractAllText(msg.content.parts);
+              // Filter out very short texts, URLs, IDs, and duplicates
+              const meaningfulTexts = [...new Set(allTexts)]
+                .filter(text => 
+                  text.length > 10 && 
+                  !text.includes('spotify:') && 
+                  !text.includes('https://') &&
+                  !text.includes('api.spotify.com') &&
+                  !text.includes('"id":') &&
+                  !text.includes('"href":') &&
+                  !text.startsWith('tool-') &&
+                  !text.match(/^[a-f0-9-]{36}$/) // Filter out UUIDs
+                );
+              
+              if (meaningfulTexts.length > 0) {
+                messageText = meaningfulTexts.slice(0, 3).join('\n\n'); // Limit to first 3 meaningful texts
               }
             }
           }
-          // If none of the above extraction methods worked, stringify the object
-          else if (Object.keys(msg.content).length > 0) {
+          // If still no text found, try JSON stringification as last resort
+          if (!messageText && Object.keys(msg.content).length > 0) {
             messageText = JSON.stringify(msg.content);
           }
         }

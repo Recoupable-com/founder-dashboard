@@ -43,7 +43,7 @@ function getIntervalsFromRange(startIso: string, endIso: string) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const email = searchParams.get('email');
-  const timeFilter = searchParams.get('timeFilter') || 'Last 30 Days';
+      const timeFilter = searchParams.get('timeFilter') || 'Last 7 Days';
   const start_date = searchParams.get('start_date');
   const end_date = searchParams.get('end_date');
   // const excludeTest = searchParams.get('excludeTest') === 'true';
