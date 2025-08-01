@@ -2,14 +2,24 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
 // Define types for content processing
-type ContentPart = string | { 
+interface ContentPart {
   text?: string; 
   content?: string;
   type?: string;
   reasoning?: string;
+  state?: string;
+  parts?: ContentPart[];
   details?: Array<{text: string, type: string}>;
   [key: string]: unknown;
-};
+}
+
+interface MemoryContent {
+  role?: string;
+  content?: string;
+  parts?: ContentPart[];
+  reasoning?: string;
+  [key: string]: unknown;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -225,7 +235,7 @@ export async function GET(request: Request) {
           // Also check for reasoning in parts array (AISDK V5 structure)
           else if (msg.content.parts && Array.isArray(msg.content.parts)) {
             // Enhanced recursive reasoning extraction for complex nested structures
-            const extractReasoningFromParts = (parts: any[]): string[] => {
+            const extractReasoningFromParts = (parts: ContentPart[]): string[] => {
               const reasoningTexts: string[] = [];
               
               for (const part of parts) {
@@ -259,7 +269,7 @@ export async function GET(request: Request) {
           if (typeof msg.content.content === 'string' && msg.content.content.includes('[object Object]')) {
             // Force enhanced extraction for corrupted content
             if (msg.content.parts && Array.isArray(msg.content.parts)) {
-              const extractAllText = (obj: any): string[] => {
+              const extractAllText = (obj: unknown): string[] => {
                 const texts: string[] = [];
                 
                 if (typeof obj === 'string' && obj !== '[object Object]' && obj.trim().length > 0) {
@@ -313,7 +323,7 @@ export async function GET(request: Request) {
           // Second try: Look for text-type parts that aren't reasoning
           else if (msg.content.parts && Array.isArray(msg.content.parts)) {
             // Enhanced recursive text extraction for complex nested structures
-            const extractTextFromParts = (parts: any[]): string[] => {
+            const extractTextFromParts = (parts: ContentPart[]): string[] => {
               const texts: string[] = [];
               
               for (const part of parts) {
@@ -352,7 +362,7 @@ export async function GET(request: Request) {
           else if (!messageText) {
             // For corrupted content fields, try to extract text from any available structure
             if (msg.content.parts && Array.isArray(msg.content.parts)) {
-              const extractAllText = (obj: any): string[] => {
+              const extractAllText = (obj: unknown): string[] => {
                 const texts: string[] = [];
                 
                 if (typeof obj === 'string' && obj !== '[object Object]' && obj.trim().length > 0) {

@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Define cache data type
+interface MessageCountsData {
+  [key: string]: unknown;
+}
+
 // In-memory cache for message counts (cache for 2 minutes)
-const messageCountsCache = new Map<string, { data: any, timestamp: number }>();
+const messageCountsCache = new Map<string, { data: MessageCountsData, timestamp: number }>();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 // Get cached data if still valid
@@ -15,7 +20,7 @@ function getCachedData(cacheKey: string) {
 }
 
 // Set cached data
-function setCachedData(cacheKey: string, data: any) {
+function setCachedData(cacheKey: string, data: MessageCountsData) {
   messageCountsCache.set(cacheKey, { data, timestamp: Date.now() });
   
   // Clean up old cache entries (simple cleanup)
