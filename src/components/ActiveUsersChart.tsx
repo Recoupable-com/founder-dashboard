@@ -132,6 +132,27 @@ const ActiveUsersChart: React.FC<ActiveUsersChartProps> = ({
               legend: { display: false },
               title: { display: false },
               tooltip: {
+                // ENHANCED: Beautiful, professional tooltip design
+                displayColors: false,
+                backgroundColor: 'rgba(15, 23, 42, 0.95)', // slate-900 with transparency
+                titleColor: '#f8fafc', // slate-50
+                bodyColor: '#e2e8f0', // slate-200
+                borderColor: 'rgba(100, 116, 139, 0.3)', // slate-500 with transparency
+                borderWidth: 1,
+                cornerRadius: 12,
+                padding: 16,
+                maxWidth: metricType === 'pmfSurveyReady' ? 700 : 320, // Even wider for PMF
+                titleFont: {
+                  size: 14,
+                  weight: '600'
+                },
+                bodyFont: {
+                  size: 12,
+                  weight: '400'
+                },
+                caretPadding: 8,
+                caretSize: 6,
+                yAlign: 'top', // Keep tooltip at top to prevent cutoff
                 callbacks: {
                   label: (context: TooltipItem<'line'>) => {
                     const label = getDatasetLabel();
@@ -144,21 +165,85 @@ const ActiveUsersChart: React.FC<ActiveUsersChartProps> = ({
                     
                     // If there are users, add them to the tooltip
                     if (users.length > 0) {
-                      const maxUsersToShow = 10;
+                      // FIXED: Show all users for PMF chart, limit others to prevent overwhelming tooltips
+                      const maxUsersToShow = metricType === 'pmfSurveyReady' ? users.length : 15;
                       const usersToShow = users.slice(0, maxUsersToShow);
-                      const tooltipLines = [mainLabel, 'Users:'];
                       
-                      // Add each user email on its own line
-                      usersToShow.forEach(user => {
-                        tooltipLines.push(`• ${user}`);
-                      });
-                      
-                      // Add "more" indicator if needed
-                      if (users.length > maxUsersToShow) {
-                        tooltipLines.push(`• (+${users.length - maxUsersToShow} more)`);
+                      if (metricType === 'pmfSurveyReady' && users.length > 10) {
+                        // ENHANCED: Beautiful multi-column layout for PMF charts
+                        const tooltipLines = [
+                          mainLabel, 
+                          '', // Empty line for spacing
+                          '👥 PMF Survey Ready Users:'
+                        ];
+                        
+                        // Group users into columns (3 columns with better spacing)
+                        const usersPerColumn = Math.ceil(usersToShow.length / 3);
+                        const columns = [];
+                        
+                        for (let i = 0; i < 3; i++) {
+                          const columnStart = i * usersPerColumn;
+                          const columnEnd = Math.min(columnStart + usersPerColumn, usersToShow.length);
+                          const columnUsers = usersToShow.slice(columnStart, columnEnd);
+                          columns.push(columnUsers);
+                        }
+                        
+                        // Create side-by-side columns with better formatting
+                        const columnWidth = 28; // Fixed width for better alignment
+                        
+                        for (let row = 0; row < usersPerColumn; row++) {
+                          let rowText = '';
+                          columns.forEach((column, colIndex) => {
+                            if (column[row]) {
+                              const email = column[row];
+                              // Use a more elegant bullet and truncate long emails
+                              const displayEmail = email.length > 26 ? email.substring(0, 23) + '...' : email;
+                              const formattedEmail = `◦ ${displayEmail}`.padEnd(columnWidth);
+                              rowText += formattedEmail;
+                            } else if (colIndex < 2) {
+                              // Add spacing for empty cells (except last column)
+                              rowText += ''.padEnd(columnWidth);
+                            }
+                          });
+                          if (rowText.trim()) {
+                            tooltipLines.push(rowText);
+                          }
+                        }
+                        
+                        // Add a subtle separator and total count
+                        tooltipLines.push('');
+                        tooltipLines.push(`📊 Total: ${users.length} users ready for PMF surveys`);
+                        
+                        return tooltipLines;
+                      } else {
+                        // ENHANCED: Beautiful single-column layout for smaller lists
+                        const userLabel = metricType === 'pmfSurveyReady' ? '👥 PMF Survey Ready Users:' : '👤 Users:';
+                        const tooltipLines = [
+                          mainLabel,
+                          '', // Empty line for spacing
+                          userLabel
+                        ];
+                        
+                        // Add each user email with elegant formatting
+                        usersToShow.forEach(user => {
+                          const displayEmail = user.length > 35 ? user.substring(0, 32) + '...' : user;
+                          tooltipLines.push(`◦ ${displayEmail}`);
+                        });
+                        
+                        // Add "more" indicator if needed (only for non-PMF charts)
+                        if (users.length > maxUsersToShow && metricType !== 'pmfSurveyReady') {
+                          tooltipLines.push('');
+                          tooltipLines.push(`📋 (+${users.length - maxUsersToShow} more users)`);
+                        }
+                        
+                        // Add total count for PMF
+                        if (metricType === 'pmfSurveyReady') {
+                          tooltipLines.push('');
+                          tooltipLines.push(`📊 Total: ${users.length} users ready for PMF surveys`);
+                        }
+                        
+                        return tooltipLines;
                       }
-                      
-                      return tooltipLines;
                     }
                     
                     return mainLabel;

@@ -1313,6 +1313,33 @@ export default function ConversationsPage() {
   // Handle metric selection
   const handleMetricClick = (metricType: MetricType) => {
     setSelectedMetric(metricType);
+    
+    // ENHANCED: Auto-filter leaderboard when PMF card is clicked
+    if (metricType === 'pmfSurveyReady') {
+      setLeaderboardFilter('pmf-ready');
+      // Scroll to leaderboard section for better UX
+      setTimeout(() => {
+        const leaderboardElement = document.querySelector('#user-leaderboard');
+        if (leaderboardElement) {
+          leaderboardElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start' 
+          });
+        }
+      }, 100);
+    } else if (metricType === 'powerUsers') {
+      setLeaderboardFilter('power-users');
+      // Scroll to leaderboard section for better UX
+      setTimeout(() => {
+        const leaderboardElement = document.querySelector('#user-leaderboard');
+        if (leaderboardElement) {
+          leaderboardElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start' 
+          });
+        }
+      }, 100);
+    }
   };
 
   // Fetch active users chart data when timeFilter or excludeTestEmails changes
@@ -1844,7 +1871,7 @@ export default function ConversationsPage() {
 
 
         {/* User Leaderboard (Time Filtered) */}
-          <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
+          <div id="user-leaderboard" className="bg-white rounded-2xl shadow-md p-6 mb-8">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8 gap-4">
                 {/* Title and Key Metrics */}
                 <div className="flex flex-col gap-4">
