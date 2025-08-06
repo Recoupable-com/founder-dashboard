@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "setup-db": "tsx scripts/setup-db.ts"
+    "setup-db": "tsx scripts/setup-db.ts",
+    "create-error-logs-table": "tsx scripts/apply-error-logs-migration.ts"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.5",
