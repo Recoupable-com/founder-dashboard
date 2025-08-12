@@ -70,7 +70,7 @@ export default function ScheduledActionsTable() {
     // Basic cron format interpretation
     const parts = schedule.split(' ');
     if (parts.length >= 5) {
-      const [minute, hour, _day, _month, weekday] = parts;
+      const [minute, hour, , , weekday] = parts;
       if (weekday !== '*') {
         const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         return `${days[parseInt(weekday)]} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
