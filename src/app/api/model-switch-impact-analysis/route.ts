@@ -57,20 +57,56 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Check if scheduled_actions table exists
+    // Get all scheduled actions
     const { data: scheduledActions, error: scheduledError } = await supabaseAdmin
       .from('scheduled_actions')
       .select('*')
-      .gte('created_at', `${startDate}T00:00:00.000Z`)
-      .lte('created_at', `${endDate}T23:59:59.999Z`)
-      .order('created_at', { ascending: true });
+      .order('last_run', { ascending: false, nullsFirst: false });
 
-    if (scheduledError && !scheduledError.message.includes('does not exist')) {
+    // Get account emails
+    const { data: accountEmails, error: emailsError } = await supabaseAdmin
+      .from('account_emails')
+      .select('account_id, email');
+
+    // Get artist/account wallet names  
+    const { data: artistNames, error: artistError } = await supabaseAdmin
+      .from('account_wallets')
+      .select('account_id, name');
+
+    if (scheduledError) {
       console.error('Error fetching scheduled actions:', scheduledError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch scheduled actions',
+        details: scheduledError 
+      }, { status: 500 });
     }
 
-    // Analyze memories for scheduled action patterns
-    const analysis = analyzeMemories(memories || [], switchDate);
+    console.log(`📋 Found ${scheduledActions?.length || 0} total scheduled actions`);
+
+    // Filter to actions that ran in our analysis period
+    const actionsInPeriod = scheduledActions?.filter(action => {
+      if (!action.last_run) return false;
+      const lastRun = new Date(action.last_run);
+      const start = new Date(`${startDate}T00:00:00.000Z`);
+      const end = new Date(`${endDate}T23:59:59.999Z`);
+      return lastRun >= start && lastRun <= end;
+    }) || [];
+
+    console.log(`📊 Found ${actionsInPeriod.length} scheduled actions that ran in analysis period`);
+
+    // Create lookup maps for emails and artist names
+    const emailMap = new Map(accountEmails?.map(e => [e.account_id, e.email]) || []);
+    const artistMap = new Map(artistNames?.map(a => [a.account_id, a.name]) || []);
+
+    // Enrich scheduled actions with user emails and artist names
+    const enrichedScheduledActions = scheduledActions?.map(action => ({
+      ...action,
+      user_email: emailMap.get(action.account_id) || null,
+      artist_name: artistMap.get(action.artist_account_id) || null
+    })) || [];
+
+    // Analyze scheduled actions with proper room/memory tracking
+    const analysis = await analyzeScheduledActions(actionsInPeriod, switchDate, supabaseAdmin);
     
     // Prepare response
     const response = {
@@ -81,10 +117,11 @@ export async function GET(request: NextRequest) {
       },
       summary: {
         totalMemories: memories?.length || 0,
-        preSwitch: analysis.preSwitchMemories.length,
-        postSwitch: analysis.postSwitchMemories.length,
-        scheduledActionsTableExists: !scheduledError,
-        totalScheduledActions: scheduledActions?.length || 0
+        preSwitch: analysis.preSwitchActions.length,
+        postSwitch: analysis.postSwitchActions.length,
+        scheduledActionsTableExists: true,
+        totalScheduledActions: scheduledActions?.length || 0,
+        actionsInPeriod: actionsInPeriod.length
       },
       patterns: analysis.patterns,
       suspiciousMemories: analysis.suspiciousMemories,
@@ -94,7 +131,9 @@ export async function GET(request: NextRequest) {
         continuationPrompts: analysis.continuationPrompts
       },
       userImpact: analysis.userImpact,
-      scheduledActions: scheduledActions || []
+      scheduledActions: enrichedScheduledActions,
+      actionsInPeriod: actionsInPeriod,
+      actionDetails: analysis.actionDetails
     };
 
     return NextResponse.json(response);
@@ -118,14 +157,95 @@ interface Memory {
   };
 }
 
-function analyzeMemories(memories: Memory[], switchDate: string) {
+interface ScheduledAction {
+  id: string;
+  title: string;
+  prompt: string;
+  schedule: string;
+  account_id: string;
+  artist_account_id: string;
+  enabled: boolean;
+  last_run: string;
+  next_run: string;
+  created_at: string;
+  updated_at: string;
+}
+
+async function analyzeScheduledActions(actions: ScheduledAction[], switchDate: string, supabaseAdmin: any) {
   const switchDateTime = new Date(`${switchDate}T00:00:00.000Z`);
   
-  // Split memories by switch date
-  const preSwitchMemories = memories.filter(m => new Date(m.created_at) < switchDateTime);
-  const postSwitchMemories = memories.filter(m => new Date(m.created_at) >= switchDateTime);
+  console.log(`🔍 Analyzing ${actions.length} scheduled actions`);
+  
+  // Split actions by switch date
+  const preSwitchActions = actions.filter(action => {
+    return action.last_run && new Date(action.last_run) < switchDateTime;
+  });
+  const postSwitchActions = actions.filter(action => {
+    return action.last_run && new Date(action.last_run) >= switchDateTime;
+  });
 
-  // Patterns to look for
+  console.log(`📊 Pre-switch actions: ${preSwitchActions.length}, Post-switch: ${postSwitchActions.length}`);
+
+  // Analysis arrays
+  const actionDetails: Array<{
+    action: ScheduledAction;
+    room_id?: string;
+    completion_status: 'complete' | 'incomplete' | 'no_room_found';
+    email_sent: boolean;
+    has_continuation_prompt: boolean;
+    memory_count: number;
+    last_message_excerpt?: string;
+    account_email?: string;
+    artist_name?: string;
+  }> = [];
+
+  const completeActions: Array<{
+    id: string;
+    account_id: string;
+    updated_at: string;
+    excerpt: string;
+    hasEmailSent: boolean;
+    title: string;
+    account_email?: string;
+  }> = [];
+
+  const incompleteActions: Array<{
+    id: string;
+    account_id: string;
+    updated_at: string;
+    excerpt: string;
+    reason: string;
+    title: string;
+  }> = [];
+
+  const continuationPrompts: Array<{
+    id: string;
+    account_id: string;
+    updated_at: string;
+    excerpt: string;
+    title: string;
+  }> = [];
+
+  const suspiciousMemories: Array<{
+    id: string;
+    account_id: string;
+    updated_at: string;
+    reason: string;
+    excerpt: string;
+    isPreSwitch: boolean;
+  }> = [];
+
+  // Email patterns for completion detection
+  const emailPatterns = [
+    'sending email',
+    'email sent',
+    'sendgrid',
+    'mailto',
+    'email to',
+    'sending report'
+  ];
+
+  // Continuation patterns for issues
   const continuationPatterns = [
     'would you like me to continue',
     'do you want me to continue',
@@ -136,177 +256,200 @@ function analyzeMemories(memories: Memory[], switchDate: string) {
     'would you like to continue'
   ];
 
-  const scheduledActionPatterns = [
-    'scheduled',
-    'report',
-    'daily',
-    'weekly',
-    'monthly',
-    'automation',
-    'job',
-    'task'
-  ];
+  // Get account emails for better reporting
+  const { data: accountEmails, error: emailError } = await supabaseAdmin
+    .from('account_emails')
+    .select('account_id, email');
 
-  const emailPatterns = [
-    'sending email',
-    'email sent',
-    'sendgrid',
-    'mailto',
-    'email to',
-    'sending report'
-  ];
+  if (emailError) {
+    console.warn('Could not fetch account emails:', emailError);
+  }
 
-  // Analyze each memory
-  const suspiciousMemories: Array<{
-    id: string;
-    account_id: string;
-    updated_at: string;
-    reason: string;
-    excerpt: string;
-    isPreSwitch: boolean;
-  }> = [];
+  const emailMap = new Map(accountEmails?.map(e => [e.account_id, e.email]) || []);
 
-  const completeActions: Array<{
-    id: string;
-    account_id: string;
-    updated_at: string;
-    excerpt: string;
-    hasEmailSent: boolean;
-  }> = [];
-
-  const incompleteActions: Array<{
-    id: string;
-    account_id: string;
-    updated_at: string;
-    excerpt: string;
-    reason: string;
-  }> = [];
-
-  const continuationPrompts: Array<{
-    id: string;
-    account_id: string;
-    updated_at: string;
-    excerpt: string;
-  }> = [];
-
-  const userActivityCounts: { [accountId: string]: { pre: number; post: number } } = {};
-
-  for (const memory of memories) {
-    const isPreSwitch = new Date(memory.updated_at) < switchDateTime;
+  // Analyze each scheduled action
+  for (const action of actions) {
+    console.log(`🔍 Analyzing action: ${action.title} (last run: ${action.last_run})`);
     
-    // Handle content - could be string or object
-    let contentStr: string;
-    try {
-      if (typeof memory.content === 'string') {
-        contentStr = memory.content.toLowerCase();
-      } else {
-        contentStr = JSON.stringify(memory.content).toLowerCase();
+    if (!action.last_run) {
+      console.log(`⚠️ Action ${action.id} has never run`);
+      continue;
+    }
+
+    // Find room created around the time this action ran (within 5 minutes)
+    const lastRunTime = new Date(action.last_run);
+    const timeWindow = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const startTime = new Date(lastRunTime.getTime() - timeWindow);
+    const endTime = new Date(lastRunTime.getTime() + timeWindow);
+
+    const { data: rooms, error: roomError } = await supabaseAdmin
+      .from('rooms')
+      .select('id, account_id, updated_at')
+      .eq('account_id', action.account_id)
+      .gte('updated_at', startTime.toISOString())
+      .lte('updated_at', endTime.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (roomError) {
+      console.error(`Error finding room for action ${action.id}:`, roomError);
+      continue;
+    }
+
+    let actionDetail: any = {
+      action: action,
+      completion_status: 'no_room_found' as const,
+      email_sent: false,
+      has_continuation_prompt: false,
+      memory_count: 0,
+      account_email: emailMap.get(action.account_id)
+    };
+
+    if (rooms && rooms.length > 0) {
+      const room = rooms[0];
+      actionDetail.room_id = room.id;
+
+      // Get memories from this room
+      const { data: memories, error: memoryError } = await supabaseAdmin
+        .from('memories')
+        .select('id, content, updated_at')
+        .eq('room_id', room.id)
+        .order('updated_at', { ascending: true });
+
+      if (!memoryError && memories) {
+        actionDetail.memory_count = memories.length;
+        
+        // Analyze memories for completion and issues
+        let emailSent = false;
+        let hasContinuation = false;
+        let lastMemoryContent = '';
+
+        for (const memory of memories) {
+          const contentStr = typeof memory.content === 'string' 
+            ? memory.content.toLowerCase()
+            : JSON.stringify(memory.content).toLowerCase();
+          
+          lastMemoryContent = contentStr;
+
+          // Check for email completion
+          if (emailPatterns.some(pattern => contentStr.includes(pattern))) {
+            emailSent = true;
+          }
+
+          // Check for continuation prompts
+          if (continuationPatterns.some(pattern => contentStr.includes(pattern))) {
+            hasContinuation = true;
+            
+            const isPreSwitch = new Date(action.last_run) < switchDateTime;
+            
+            continuationPrompts.push({
+              id: memory.id,
+              account_id: action.account_id,
+              updated_at: memory.updated_at,
+              excerpt: contentStr.substring(0, 200) + '...',
+              title: action.title
+            });
+
+            suspiciousMemories.push({
+              id: memory.id,
+              account_id: action.account_id,
+              updated_at: memory.updated_at,
+              reason: 'Contains continuation prompt during scheduled action',
+              excerpt: contentStr.substring(0, 200) + '...',
+              isPreSwitch
+            });
+          }
+        }
+
+        actionDetail.email_sent = emailSent;
+        actionDetail.has_continuation_prompt = hasContinuation;
+        actionDetail.last_message_excerpt = lastMemoryContent.substring(0, 300) + '...';
+        actionDetail.completion_status = emailSent ? 'complete' : 'incomplete';
+
+        // Add to appropriate arrays
+        if (emailSent) {
+          completeActions.push({
+            id: action.id,
+            account_id: action.account_id,
+            updated_at: action.last_run,
+            excerpt: lastMemoryContent.substring(0, 200) + '...',
+            hasEmailSent: true,
+            title: action.title,
+            account_email: emailMap.get(action.account_id)
+          });
+        } else {
+          incompleteActions.push({
+            id: action.id,
+            account_id: action.account_id,
+            updated_at: action.last_run,
+            excerpt: lastMemoryContent.substring(0, 200) + '...',
+            reason: hasContinuation ? 'Action stopped at continuation prompt' : 'No email sent confirmation found',
+            title: action.title
+          });
+        }
       }
-    } catch (error) {
-      console.warn(`Error processing content for memory ${memory.id}:`, error);
-      contentStr = String(memory.content || '').toLowerCase();
+    }
+
+    actionDetails.push(actionDetail);
+  }
+
+  // Calculate user impact (accounts with significant completion rate drops)
+  const accountStats = new Map<string, { pre: number; post: number; preComplete: number; postComplete: number }>();
+  
+  for (const detail of actionDetails) {
+    const accountId = detail.action.account_id;
+    const isPreSwitch = new Date(detail.action.last_run) < switchDateTime;
+    
+    if (!accountStats.has(accountId)) {
+      accountStats.set(accountId, { pre: 0, post: 0, preComplete: 0, postComplete: 0 });
     }
     
-    // Count user activity
-    const accountId = memory.rooms.account_id;
-    if (!userActivityCounts[accountId]) {
-      userActivityCounts[accountId] = { pre: 0, post: 0 };
-    }
+    const stats = accountStats.get(accountId)!;
     if (isPreSwitch) {
-      userActivityCounts[accountId].pre++;
+      stats.pre++;
+      if (detail.completion_status === 'complete') stats.preComplete++;
     } else {
-      userActivityCounts[accountId].post++;
-    }
-
-    // Look for continuation prompts (major red flag for Gemini)
-    const hasContinuation = continuationPatterns.some(pattern => 
-      contentStr.includes(pattern)
-    );
-
-    if (hasContinuation) {
-      continuationPrompts.push({
-        id: memory.id,
-        account_id: accountId,
-        updated_at: memory.updated_at,
-        excerpt: contentStr.substring(0, 200) + '...'
-      });
-
-      suspiciousMemories.push({
-        id: memory.id,
-        account_id: accountId,
-        updated_at: memory.updated_at,
-        reason: 'Contains continuation prompt - likely incomplete action',
-        excerpt: contentStr.substring(0, 200) + '...',
-        isPreSwitch
-      });
-    }
-
-    // Look for scheduled actions
-    const hasScheduledAction = scheduledActionPatterns.some(pattern => 
-      contentStr.includes(pattern)
-    );
-
-    if (hasScheduledAction) {
-      const hasEmailSent = emailPatterns.some(pattern => 
-        contentStr.includes(pattern)
-      );
-
-      if (hasEmailSent) {
-        completeActions.push({
-          id: memory.id,
-          account_id: accountId,
-          updated_at: memory.updated_at,
-          excerpt: contentStr.substring(0, 200) + '...',
-          hasEmailSent
-        });
-      } else if (!isPreSwitch) {
-        // Post-switch scheduled action without email = suspicious
-        incompleteActions.push({
-          id: memory.id,
-          account_id: accountId,
-          updated_at: memory.updated_at,
-          excerpt: contentStr.substring(0, 200) + '...',
-          reason: 'Scheduled action without email completion'
-        });
-
-        suspiciousMemories.push({
-          id: memory.id,
-          account_id: accountId,
-          updated_at: memory.updated_at,
-          reason: 'Post-switch scheduled action without email completion',
-          excerpt: contentStr.substring(0, 200) + '...',
-          isPreSwitch
-        });
-      }
+      stats.post++;
+      if (detail.completion_status === 'complete') stats.postComplete++;
     }
   }
 
-  // Calculate user impact
-  const userImpact = Object.entries(userActivityCounts)
-    .map(([accountId, counts]) => ({
+  const userImpact = Array.from(accountStats.entries()).map(([accountId, stats]) => {
+    const preRate = stats.pre > 0 ? stats.preComplete / stats.pre : 0;
+    const postRate = stats.post > 0 ? stats.postComplete / stats.post : 0;
+    const change = postRate - preRate;
+    const significantDrop = stats.pre > 0 && stats.post > 0 && change < -0.3; // 30% drop
+    
+    return {
       account_id: accountId,
-      preSwitch: counts.pre,
-      postSwitch: counts.post,
-      change: counts.post - counts.pre,
-      percentChange: counts.pre > 0 ? ((counts.post - counts.pre) / counts.pre * 100) : 0,
-      significantDrop: counts.pre > 5 && counts.post < counts.pre * 0.5 // 50% drop for active users
-    }))
-    .sort((a, b) => a.change - b.change); // Most impacted first
+      preSwitch: stats.pre,
+      postSwitch: stats.post,
+      preCompleteRate: preRate,
+      postCompleteRate: postRate,
+      change: change,
+      percentChange: preRate > 0 ? (change / preRate * 100) : 0,
+      significantDrop
+    };
+  }).filter(u => u.preSwitch > 0 || u.postSwitch > 0)
+    .sort((a, b) => a.change - b.change);
+
+  console.log(`✅ Analysis complete: ${completeActions.length} complete, ${incompleteActions.length} incomplete, ${continuationPrompts.length} continuation prompts`);
 
   return {
-    preSwitchMemories,
-    postSwitchMemories,
+    preSwitchActions,
+    postSwitchActions,
     patterns: {
       continuationPromptsFound: continuationPrompts.length,
-      scheduledActionsFound: completeActions.length + incompleteActions.length,
+      scheduledActionsFound: actions.length,
       completeActionsFound: completeActions.length,
       incompleteActionsFound: incompleteActions.length,
       suspiciousMemoriesFound: suspiciousMemories.length
     },
-    suspiciousMemories: suspiciousMemories.slice(0, 20), // Top 20 most suspicious
-    completeActions: completeActions.slice(0, 10), // Examples
-    incompleteActions: incompleteActions.slice(0, 10), // Examples  
-    continuationPrompts: continuationPrompts.slice(0, 10), // Examples
-    userImpact: userImpact.slice(0, 20) // Top 20 most impacted users
+    suspiciousMemories: suspiciousMemories.slice(0, 20),
+    completeActions: completeActions.slice(0, 10),
+    incompleteActions: incompleteActions.slice(0, 10),
+    continuationPrompts: continuationPrompts.slice(0, 10),
+    userImpact: userImpact.slice(0, 20),
+    actionDetails
   };
 }

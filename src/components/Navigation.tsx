@@ -10,6 +10,8 @@ const navItems = [
   // Sales Pipeline is now integrated into the Dashboard
   { name: "Conversations", href: "/conversations" },
   { name: "Agent Templates", href: "/agent-templates" },
+  { name: "Analytics", href: "/analytics" },
+  { name: "Model Analysis", href: "/model-switch-analysis" },
 ]
 
 export function Navigation() {
