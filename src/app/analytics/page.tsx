@@ -1,5 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import PMFChurnAnalysis from '@/components/PMFChurnAnalysis';
+import ModelSwitchAnalysis from '@/components/ModelSwitchAnalysis';
 
 // Placeholder metric definitions
 const metricsBase = [
@@ -164,6 +166,16 @@ export default function AnalyticsPage() {
           {getChartLabel(selectedMetric)} Over Time
         </span>
         <span className="text-gray-400 text-lg">[Trends Chart Placeholder]</span>
+      </div>
+
+      {/* PMF Churn Analysis */}
+      <div className="mb-10">
+        <PMFChurnAnalysis />
+      </div>
+
+      {/* Model Switch Analysis */}
+      <div className="mb-10">
+        <ModelSwitchAnalysis />
       </div>
 
       {/* Breakdown Panels */}

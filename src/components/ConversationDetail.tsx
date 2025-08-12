@@ -54,7 +54,24 @@ const ConversationDetailComponent: React.FC<ConversationDetailProps> = ({
 
   return (
     <div>
-      <h3 className="font-medium text-gray-900 mb-4">Conversation Details</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium text-gray-900">Conversation Details</h3>
+        {/* External chat link */}
+        {conversationDetail?.room_id && (
+          <a
+            href={`https://chat.recoupable.com/chat/${conversationDetail.room_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 underline"
+            title="Open in Recoup Chat"
+          >
+            Open in Chat
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M5 4a1 1 0 011-1h9a1 1 0 011 1v9a1 1 0 11-2 0V6.414l-9.293 9.293a1 1 0 01-1.414-1.414L12.586 5H6a1 1 0 01-1-1z" />
+            </svg>
+          </a>
+        )}
+      </div>
       <div className="border border-gray-200 rounded-lg p-4 max-h-96 overflow-y-auto">
         <div className="mb-4">
           <h4 className="font-medium text-gray-900">{conversationDetail.topic || 'Untitled'}</h4>

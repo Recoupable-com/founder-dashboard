@@ -26,6 +26,8 @@ This dashboard helps track active users, conversations, and business metrics for
 - `/conversations`: Detailed conversation analytics and user activity
 - `/sales-pipeline`: Customer pipeline management
 - `/agent-templates`: Agent template usage analytics and tracking
+- `/analytics`: Analytics dashboard with PMF churn and model switch analysis
+- `/model-switch-analysis`: Dedicated page for monitoring scheduled action completion patterns and model switch impact
 
 ### API Routes
 
@@ -49,6 +51,8 @@ This dashboard helps track active users, conversations, and business metrics for
 - `/api/power-users`: Identify and track power users based on activity
 - `/api/power-users-chart`: Chart data for power user trends
 - `/api/pmf-survey-ready`: Users ready for PMF surveys
+- `/api/pmf-churn-users`: Track users who were PMF-ready but are no longer (PMF churn analysis)
+- `/api/model-switch-impact-analysis`: Analyzes the impact of the July 28th Claude→Gemini model switch on scheduled actions and user behavior. Enhanced to include user emails and artist names for comprehensive scheduled action tracking
 - `/api/user-activity-details`: Detailed user activity breakdown
 - `/api/user-activity-trend`: User activity trends over time
 
@@ -60,6 +64,9 @@ This dashboard helps track active users, conversations, and business metrics for
 #### Dashboard Components
 - `MetricCard`: Reusable metric display with tooltip support
 - `ActiveUsersChart`: Chart component for active user visualization
+- `PMFChurnAnalysis`: Component for analyzing and displaying PMF user churn with sorting and detailed user information
+- `ModelSwitchAnalysis`: Comprehensive dashboard for monitoring scheduled action completion patterns, continuation prompts, and model switch impact analysis
+- `ScheduledActionsTable`: Table component displaying all scheduled actions with user emails, artist names, prompts, schedules, and execution status
 - `AutoRefresh`: Automatic data refresh functionality
 - `ConnectionStatus`: Database connection monitoring
 

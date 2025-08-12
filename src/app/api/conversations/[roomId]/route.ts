@@ -202,18 +202,42 @@ export async function GET(request: Request) {
         let formattedText = text;
         for (const tool of toolNames ?? []) {
           // Use regex to match the tool name as a whole word
-          const regex = new RegExp(`\b${tool}\b`, 'g');
+          const regex = new RegExp(`\\b${tool}\\b`, 'g');
           formattedText = formattedText.replace(regex, `\`${tool}\``);
         }
-        
-        return formattedText;
+        // Finally, sanitize out any GPT-5 metadata or token artifacts
+        return sanitizeVisibleText(formattedText);
+      };
+
+      // Heuristic checks for opaque tokens/metadata that should not be shown to users
+      const isLikelyOpaqueToken = (text: string): boolean => {
+        if (!text) return false;
+        const trimmed = text.trim();
+        // rs_* identifiers (reasoning/session ids), long Fernet/base64-like blobs (gAAAAA..., eyJ..., etc.), long hex
+        if (/^rs_[A-Za-z0-9_-]{16,}$/.test(trimmed)) return true;
+        if (/^gAAAAA[A-Za-z0-9-_]{40,}$/.test(trimmed)) return true;
+        if (/^[A-Za-z0-9+\/=_-]{60,}$/.test(trimmed)) return true; // generic base64-ish long lines
+        if (/^[a-f0-9]{40,}$/.test(trimmed)) return true; // long hex strings
+        return false;
+      };
+
+      // Remove opaque tokens and empty lines from final visible text
+      const sanitizeVisibleText = (raw: string): string => {
+        if (!raw) return raw;
+        const lines = raw.split(/\r?\n/);
+        const cleaned = lines
+          .map(l => l.trimEnd())
+          .filter(l => l.trim().length > 0 && !isLikelyOpaqueToken(l.trim()))
+          .join('\n');
+        return cleaned.trim();
       };
       
       // Handle different content formats
       if (msg.content) {
         // If content is a simple string, use it directly
         if (typeof msg.content === 'string') {
-          messageText = msg.content;
+          // If the raw string looks like a token blob, don't show it
+          messageText = isLikelyOpaqueToken(msg.content) ? '' : msg.content;
         } 
         // Handle complex object structure
         else if (typeof msg.content === 'object') {
@@ -306,14 +330,16 @@ export async function GET(request: Request) {
                 );
               
               if (meaningfulTexts.length > 0) {
-                messageText = meaningfulTexts.slice(0, 3).join('\n\n'); // Use enhanced extraction
+                // Join all meaningful text fragments to avoid truncating long assistant messages
+                messageText = meaningfulTexts.join('\n\n');
               }
             }
           }
           // First try: Direct content field (usually clean user-facing text)
           else if (typeof msg.content.content === 'string' && 
               !msg.content.content.includes('perplexity_ask')) {
-            messageText = msg.content.content;
+            // Skip if looks like opaque token
+            messageText = isLikelyOpaqueToken(msg.content.content) ? '' : msg.content.content;
           }
           // Second try: Look for text-type parts that aren't reasoning
           else if (msg.content.parts && Array.isArray(msg.content.parts)) {
@@ -323,15 +349,23 @@ export async function GET(request: Request) {
               
               for (const part of parts) {
                 if (typeof part === 'string') {
-                  texts.push(part);
+                  if (!isLikelyOpaqueToken(part)) texts.push(part);
                 } else if (typeof part === 'object' && part !== null) {
                   // Direct text from type="text" parts
                   if (part.type === 'text' && part.text && typeof part.text === 'string') {
-                    texts.push(part.text);
+                    if (!isLikelyOpaqueToken(part.text)) texts.push(part.text);
                   }
                   // Text from state="done" parts
                   else if (part.type === 'text' && part.state === 'done' && part.text && typeof part.text === 'string') {
-                    texts.push(part.text);
+                    if (!isLikelyOpaqueToken(part.text)) texts.push(part.text);
+                  }
+                  // Many providers nest text inside details arrays
+                  else if (Array.isArray(part.details)) {
+                    for (const d of part.details) {
+                      if (d && typeof d.text === 'string' && !isLikelyOpaqueToken(d.text)) {
+                        texts.push(d.text);
+                      }
+                    }
                   }
                   // Recursively search nested parts arrays
                   else if (part.parts && Array.isArray(part.parts)) {
@@ -339,7 +373,7 @@ export async function GET(request: Request) {
                   }
                   // Handle other text fields
                   else if (part.content && typeof part.content === 'string') {
-                    texts.push(part.content);
+                    if (!isLikelyOpaqueToken(part.content)) texts.push(part.content);
                   }
                 }
               }
@@ -361,7 +395,7 @@ export async function GET(request: Request) {
                 const texts: string[] = [];
                 
                 if (typeof obj === 'string' && obj !== '[object Object]' && obj.trim().length > 0) {
-                  texts.push(obj);
+                  if (!isLikelyOpaqueToken(obj)) texts.push(obj);
                 } else if (Array.isArray(obj)) {
                   for (const item of obj) {
                     texts.push(...extractAllText(item));
@@ -370,10 +404,10 @@ export async function GET(request: Request) {
                   // Look for text fields specifically
                   const objWithProps = obj as Record<string, unknown>;
                   if (objWithProps.text && typeof objWithProps.text === 'string' && objWithProps.text !== '[object Object]') {
-                    texts.push(objWithProps.text);
+                    if (!isLikelyOpaqueToken(objWithProps.text)) texts.push(objWithProps.text);
                   }
                   if (objWithProps.content && typeof objWithProps.content === 'string' && objWithProps.content !== '[object Object]') {
-                    texts.push(objWithProps.content);
+                    if (!isLikelyOpaqueToken(objWithProps.content)) texts.push(objWithProps.content);
                   }
                   
                   // Recursively search all object properties
@@ -396,11 +430,13 @@ export async function GET(request: Request) {
                   !text.includes('"id":') &&
                   !text.includes('"href":') &&
                   !text.startsWith('tool-') &&
-                  !text.match(/^[a-f0-9-]{36}$/) // Filter out UUIDs
+                  !text.match(/^[a-f0-9-]{36}$/) && // Filter out UUIDs
+                  !isLikelyOpaqueToken(text)
                 );
               
               if (meaningfulTexts.length > 0) {
-                messageText = meaningfulTexts.slice(0, 3).join('\n\n'); // Limit to first 3 meaningful texts
+                // Join all meaningful text fragments to avoid truncation
+                messageText = meaningfulTexts.join('\n\n');
               }
             }
           }
@@ -411,6 +447,14 @@ export async function GET(request: Request) {
         }
       }
       
+      // Final sanitize of the visible content
+      messageText = sanitizeVisibleText(messageText);
+
+      // If assistant message is empty after sanitizing, provide a placeholder so UI doesn't show token blobs
+      if (!messageText || messageText.trim().length === 0) {
+        messageText = 'Message unavailable';
+      }
+
       return {
         id: msg.id,
         room_id: roomId,
@@ -420,6 +464,23 @@ export async function GET(request: Request) {
         created_at: msg.updated_at // Using updated_at as the timestamp
       };
     }) : [];
+    
+    // Quick follow-up probe: do we have messages after the last one we are returning?
+    let hasMoreAfter = false;
+    let lastMessageTs: string | null = null;
+    if (messagesData && messagesData.length > 0) {
+      lastMessageTs = messagesData[messagesData.length - 1].updated_at;
+      try {
+        const { count: newerCount } = await supabaseAdmin
+          .from('memories')
+          .select('id', { count: 'exact', head: true })
+          .eq('room_id', roomId)
+          .gt('updated_at', lastMessageTs);
+        hasMoreAfter = (newerCount || 0) > 0;
+      } catch (probeError) {
+        console.warn('API: Could not probe for newer messages:', probeError);
+      }
+    }
     
     // If this is a segment room, prepend the segment report as a special message
     if (segmentReport && segmentReportTimestamp) {
@@ -445,7 +506,9 @@ export async function GET(request: Request) {
       artist_reference: artistId !== 'Unknown Artist' ? `REF-${artistId.substring(0, 5)}` : 'REF-UNKNOWN',
       topic: roomData.topic || 'New Conversation',
       is_test_account: false,
-      messages: messages
+      messages: messages,
+      has_more_after: hasMoreAfter,
+      last_message_timestamp: lastMessageTs
     };
     
     return NextResponse.json(conversationDetail);
