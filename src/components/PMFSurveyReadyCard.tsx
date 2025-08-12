@@ -242,7 +242,7 @@ export default function PMFSurveyReadyCard({
     <div className="relative">
       {/* Tooltip */}
       <CustomTooltip
-        text={`Users with 2+ sessions and recent activity (${getDateRanges().currentPeriod}). Ready for product-market fit surveys. Click to filter leaderboard and see churn details.`}
+        content={`Users with 2+ sessions and recent activity (${getDateRanges().currentPeriod}). Ready for product-market fit surveys. Click to filter leaderboard and see churn details.`}
       >
         {cardContent}
       </CustomTooltip>
