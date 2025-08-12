@@ -33,6 +33,8 @@ interface PMFSurveyReadyCardProps {
   onClick?: () => void;
   isSelected?: boolean;
   className?: string;
+  // timeFilter is currently not used within this component but kept for API compatibility
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   timeFilter?: string;
 }
 
@@ -158,6 +160,7 @@ export default function PMFSurveyReadyCard({
     return `${days} days ago`;
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getChurnReasonBadge = (reason: string) => {
     const badges = {
       'no_recent_activity': (

@@ -327,7 +327,7 @@ const ModelSwitchAnalysis: React.FC = () => {
                   Complete Actions ({data.examples.completeActions.length})
                 </h4>
                 <div className="space-y-3">
-                  {data.examples.completeActions.slice(0, 3).map((action, index) => (
+                  {data.examples.completeActions.slice(0, 3).map((action) => (
                     <div key={action.id} className="p-3 bg-green-50 rounded-lg border border-green-200">
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-xs text-green-600 font-medium">
@@ -354,7 +354,7 @@ const ModelSwitchAnalysis: React.FC = () => {
                   Incomplete Actions ({data.examples.incompleteActions.length})
                 </h4>
                 <div className="space-y-3">
-                  {data.examples.incompleteActions.slice(0, 3).map((action, index) => (
+                  {data.examples.incompleteActions.slice(0, 3).map((action) => (
                     <div key={action.id} className="p-3 bg-red-50 rounded-lg border border-red-200">
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-xs text-red-600 font-medium">
@@ -386,7 +386,7 @@ const ModelSwitchAnalysis: React.FC = () => {
           </h3>
           
           <div className="space-y-3">
-            {data.userImpact.filter(user => user.significantDrop).slice(0, 5).map((user, index) => (
+              {data.userImpact.filter(user => user.significantDrop).slice(0, 5).map((user) => (
               <div key={user.account_id} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
                 <div>
                   <span className="text-sm font-medium text-gray-900">

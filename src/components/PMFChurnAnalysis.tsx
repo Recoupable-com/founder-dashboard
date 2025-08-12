@@ -220,7 +220,7 @@ export default function PMFChurnAnalysis() {
             <div className="text-sm">All PMF users remained active</div>
           </div>
         ) : (
-          displayedUsers?.map((user, index) => (
+          displayedUsers?.map((user) => (
             <div
               key={user.email}
               className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
