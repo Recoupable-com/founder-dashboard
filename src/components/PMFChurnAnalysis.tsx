@@ -191,7 +191,7 @@ export default function PMFChurnAnalysis() {
           <label className="text-sm font-medium text-gray-700">Sort by:</label>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'activity' | 'sessions' | 'email')}
             className="px-3 py-1 border border-gray-300 rounded text-sm"
             title="Sort churned PMF users by"
           >

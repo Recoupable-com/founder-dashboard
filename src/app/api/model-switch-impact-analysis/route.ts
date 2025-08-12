@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Define our analysis period - looking at recent data to understand current patterns
     // Since July 28, 2025 is in the future, let's analyze recent memory patterns first
@@ -64,12 +65,12 @@ export async function GET(request: NextRequest) {
       .order('last_run', { ascending: false, nullsFirst: false });
 
     // Get account emails
-    const { data: accountEmails, error: emailsError } = await supabaseAdmin
+    const { data: accountEmails } = await supabaseAdmin
       .from('account_emails')
       .select('account_id, email');
 
     // Get artist/account wallet names  
-    const { data: artistNames, error: artistError } = await supabaseAdmin
+    const { data: artistNames } = await supabaseAdmin
       .from('account_wallets')
       .select('account_id, name');
 
@@ -147,15 +148,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-interface Memory {
-  id: string;
-  room_id: string;
-  content: unknown;
-  updated_at: string;
-  rooms: {
-    account_id: string;
-  };
-}
+// Removed unused Memory interface
 
 interface ScheduledAction {
   id: string;
@@ -171,7 +164,23 @@ interface ScheduledAction {
   updated_at: string;
 }
 
-async function analyzeScheduledActions(actions: ScheduledAction[], switchDate: string, supabaseAdmin: any) {
+type ActionDetail = {
+  action: ScheduledAction;
+  room_id?: string;
+  completion_status: 'complete' | 'incomplete' | 'no_room_found';
+  email_sent: boolean;
+  has_continuation_prompt: boolean;
+  memory_count: number;
+  last_message_excerpt?: string;
+  account_email?: string;
+  artist_name?: string;
+};
+
+async function analyzeScheduledActions(
+  actions: ScheduledAction[],
+  switchDate: string,
+  supabaseClient: SupabaseClient
+) {
   const switchDateTime = new Date(`${switchDate}T00:00:00.000Z`);
   
   console.log(`🔍 Analyzing ${actions.length} scheduled actions`);
@@ -257,7 +266,7 @@ async function analyzeScheduledActions(actions: ScheduledAction[], switchDate: s
   ];
 
   // Get account emails for better reporting
-  const { data: accountEmails, error: emailError } = await supabaseAdmin
+  const { data: accountEmails, error: emailError } = await supabaseClient
     .from('account_emails')
     .select('account_id, email');
 
@@ -282,7 +291,7 @@ async function analyzeScheduledActions(actions: ScheduledAction[], switchDate: s
     const startTime = new Date(lastRunTime.getTime() - timeWindow);
     const endTime = new Date(lastRunTime.getTime() + timeWindow);
 
-    const { data: rooms, error: roomError } = await supabaseAdmin
+    const { data: rooms, error: roomError } = await supabaseClient
       .from('rooms')
       .select('id, account_id, updated_at')
       .eq('account_id', action.account_id)
@@ -296,7 +305,7 @@ async function analyzeScheduledActions(actions: ScheduledAction[], switchDate: s
       continue;
     }
 
-    let actionDetail: any = {
+    const actionDetail: ActionDetail = {
       action: action,
       completion_status: 'no_room_found' as const,
       email_sent: false,
@@ -310,7 +319,7 @@ async function analyzeScheduledActions(actions: ScheduledAction[], switchDate: s
       actionDetail.room_id = room.id;
 
       // Get memories from this room
-      const { data: memories, error: memoryError } = await supabaseAdmin
+      const { data: memories, error: memoryError } = await supabaseClient
         .from('memories')
         .select('id, content, updated_at')
         .eq('room_id', room.id)

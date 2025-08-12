@@ -16,7 +16,9 @@ export async function GET() {
     // 2. Get churn data from PMF churn API
     const churnResponse = await fetch('http://localhost:3000/api/pmf-churn-users?excludeTest=true');
     const churnData = await churnResponse.json();
-    const churnedUsers = new Set(churnData.churnedUsers?.map((u: any) => u.email) || []);
+    const churnedUsers = new Set(
+      churnData.churnedUsers?.map((u: { email: string }) => u.email) || []
+    );
 
     // 3. Get leaderboard data for cross-validation
     const now = new Date();
@@ -25,7 +27,9 @@ export async function GET() {
       `http://localhost:3000/api/conversations/leaderboard?start_date=${sevenDaysAgo.toISOString()}&end_date=${now.toISOString()}`
     );
     const leaderboardData = await leaderboardResponse.json();
-    const activeUsersLeaderboard = new Set(leaderboardData.leaderboard?.map((u: any) => u.email) || []);
+    const activeUsersLeaderboard = new Set(
+      leaderboardData.leaderboard?.map((u: { email: string }) => u.email) || []
+    );
 
     // 4. Find inconsistencies
     const inconsistencies = [];
