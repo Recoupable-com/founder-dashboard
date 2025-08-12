@@ -45,6 +45,8 @@ export default function PMFSurveyReadyCard({
   className,
   timeFilter = 'Last 7 Days'
 }: PMFSurveyReadyCardProps) {
+  // Mark optionally provided prop as intentionally unused within this component
+  void timeFilter;
   const [isExpanded, setIsExpanded] = useState(false);
   const [churnData, setChurnData] = useState<PMFChurnData | null>(null);
   const [loading, setLoading] = useState(false);
