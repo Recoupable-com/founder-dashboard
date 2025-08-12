@@ -141,7 +141,6 @@ const ActiveUsersChart: React.FC<ActiveUsersChartProps> = ({
                 borderWidth: 1,
                 cornerRadius: 12,
                 padding: 16,
-                maxWidth: metricType === 'pmfSurveyReady' ? 700 : 320, // Even wider for PMF
                 titleFont: {
                   size: 14,
                   weight: 600
