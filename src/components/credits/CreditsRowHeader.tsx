@@ -27,7 +27,7 @@ const CreditsRowHeader = ({ usage, rank }: CreditsRowHeaderProps) => {
       <div className="text-right">
         <div className="font-semibold text-gray-900"></div>
         <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">
-          Last Refilled Credits
+          Last Refilled
         </div>
         <div className="text-sm text-gray-600">
           {usage.timestamp
