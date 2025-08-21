@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { Tables } from "@/lib/supabase/database.types";
 
 export type CreditsUsage = Tables<"credits_usage">;
