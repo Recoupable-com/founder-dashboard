@@ -9,7 +9,6 @@ const Credits = async () => {
     const timestampAfter = oneMonthAgo.toISOString();
 
     const creditsUsage = await selectCreditsUsage({ timestampAfter });
-    console.log("creditsUsage", creditsUsage);
     return <CreditsPage creditsUsage={creditsUsage} />;
   } catch (error) {
     console.error("Error fetching credits usage:", error);
