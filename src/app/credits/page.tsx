@@ -1,6 +1,8 @@
 import CreditsPage from "@/components/credits/CreditsPage";
 import { selectCreditsUsage } from "@/lib/supabase/credits_usage/selectCreditsUsage";
 
+export const dynamic = "force-dynamic";
+
 const Credits = async () => {
   try {
     // Calculate timestamp for 1 month ago
